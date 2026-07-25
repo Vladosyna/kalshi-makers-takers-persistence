@@ -158,6 +158,15 @@ def fetch_pass1(
                    "hourly-reset crypto/index sub-markets no downstream phase uses. Pass 0 to "
                    "disable and process every volume-qualifying market regardless of duration."
     ),
+    panel_quote_window: str | None = typer.Option(
+        None, "--panel-quote-window",
+        help="Restrict ONLY the panel/quote fetch to one analysis window ('r1' or 'r2'); "
+             "discovery stays whole-universe either way. That phase walks a keyset cursor "
+             "ordered by ticker, so with a large R2 backlog R1's remainder finishes only "
+             "after most of R2 -- yet R1's count-reconciliation gate is the prerequisite "
+             "for every later phase (spec S1). Pass 'r1' to fetch R1's remainder first. "
+             "Omit for the original both-windows behaviour.",
+    ),
 ) -> None:
     """Universe discovery (live sweep + historical series scan) + boundary-tick
     price panel + closing quotes. Resumable -- safe to re-run; each sub-phase
@@ -168,9 +177,18 @@ def fetch_pass1(
     from kalshi_mt.fetch.pass1 import run_pass1
     from kalshi_mt.store import db
 
+    from kalshi_mt.fetch.pass1 import ANALYSIS_WINDOW_COLUMNS
+
     config = load_config()
     min_volume_fp = None if min_volume <= 0 else min_volume
     min_open_duration_s = None if min_open_hours <= 0 else min_open_hours * 3600.0
+    if panel_quote_window is not None and panel_quote_window not in ANALYSIS_WINDOW_COLUMNS:
+        typer.secho(
+            f"--panel-quote-window must be one of {sorted(ANALYSIS_WINDOW_COLUMNS)}, "
+            f"got {panel_quote_window!r}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=1)
 
     async def _run():
         bucket = TokenBucket(
@@ -184,6 +202,7 @@ def fetch_pass1(
                 client, conn, max_series_this_run=max_series, market_processing_limit=market_limit,
                 live_max_pages=live_max_pages, series_resolution_batch_size=resolve_batch_size,
                 min_volume_fp=min_volume_fp, min_open_duration_s=min_open_duration_s,
+                panel_quote_window=panel_quote_window,
             )
         finally:
             await client.aclose()

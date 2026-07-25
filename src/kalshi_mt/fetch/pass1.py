@@ -66,6 +66,11 @@ R2_END = int(datetime(2026, 6, 30, 23, 59, 59, tzinfo=timezone.utc).timestamp())
 # own ~60-day live/historical trades-and-candlesticks boundary.
 LIVE_METADATA_FLOOR = int(datetime(2023, 1, 1, tzinfo=timezone.utc).timestamp())
 
+# Analysis-window name -> markets column. A fixed map, so a window name can
+# only ever become one of these two literals in SQL (the column can't be a
+# bound parameter), matching r1/filters.py's own window_column dispatch.
+ANALYSIS_WINDOW_COLUMNS = {"r1": "in_r1_window", "r2": "in_r2_window"}
+
 PANEL_LOOKBACK_DAYS = 10
 
 
@@ -618,6 +623,7 @@ async def run_pass1(
     series_resolution_batch_size: int | None = 500,
     min_volume_fp: float | None = 1000.0,
     min_open_duration_s: float | None = 86_400.0,
+    panel_quote_window: str | None = None,
     panel_quote_concurrency: int = 20,
 ) -> dict[str, Any]:
     """Discovery (live sweep + historical series scan) -> series/category
@@ -660,7 +666,17 @@ async def run_pass1(
     the volume filter this scopes ONLY the expensive per-market work, not
     metadata discovery, so reconciliation coverage against BDW's 46,282
     stays complete. Pass None to disable (e.g. to deliberately fetch a
-    short-duration market for a verification run)."""
+    short-duration market for a verification run).
+
+    `panel_quote_window` ('r1' | 'r2' | None) restricts ONLY the panel/quote
+    phase to one analysis window. That phase walks a keyset cursor ordered by
+    ticker, which interleaves both windows arbitrarily, so with a large R2
+    backlog R1's own remainder only finishes after most of R2 -- while R1's
+    count-reconciliation gate is the spec's hard prerequisite for every later
+    phase (S1: count deltas before estimate deltas). Passing 'r1' fetches R1's
+    remainder first. Discovery is deliberately NOT scoped by it and stays
+    whole-universe, so reconciliation coverage is never narrowed. None keeps
+    the original both-windows behaviour."""
     live_stats = await discover_live_window(client, conn, max_pages=live_max_pages)
     hist_stats = await discover_historical_series(
         client, conn, max_series_this_run=max_series_this_run
@@ -671,6 +687,10 @@ async def run_pass1(
     )
 
     scope_sql, extra_params = _scope_predicate(min_volume_fp, min_open_duration_s)
+    if panel_quote_window is not None:
+        # Column name, not a bound parameter -- validated against a fixed map
+        # so it can never carry caller-supplied SQL.
+        scope_sql += f" AND {ANALYSIS_WINDOW_COLUMNS[panel_quote_window]} = 1"
     base_query = (
         "SELECT ticker, event_ticker, series_ticker, close_time_epoch FROM markets "
         "WHERE close_time_epoch IS NOT NULL "

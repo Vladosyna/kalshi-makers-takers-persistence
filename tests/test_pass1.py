@@ -782,6 +782,42 @@ def test_run_pass1_resumes_orphaned_market_missing_only_its_quote(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM quotes WHERE ticker='ORPHAN'").fetchone()[0] == 1
 
 
+def test_run_pass1_panel_quote_window_restricts_to_one_window(tmp_path):
+    """The panel/quote keyset cursor is ordered by ticker, so it interleaves
+    both analysis windows; with a large R2 backlog R1's remainder would finish
+    only after most of R2, even though R1's reconciliation gate blocks every
+    later phase. panel_quote_window='r1' fetches R1's remainder first."""
+    conn = db.connect(tmp_path / "t.db")
+    common = {"open_time_epoch": 0, "close_time_epoch": 100_000, "volume_fp": 5000.0}
+    db.upsert_market(conn, {"ticker": "IN-R1", "in_r1_window": 1, **common})
+    db.upsert_market(conn, {"ticker": "IN-R2", "in_r2_window": 1, **common})
+    conn.commit()
+
+    client = _NoOpDiscoveryClient()
+    stats = asyncio.run(
+        pass1.run_pass1(client, conn, max_series_this_run=0, panel_quote_window="r1")
+    )
+
+    assert "IN-R1" in client.trade_fetch_calls
+    assert "IN-R2" not in client.trade_fetch_calls
+    assert stats["markets_processed"] == 1
+
+
+def test_run_pass1_panel_quote_window_none_processes_both_windows(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    common = {"open_time_epoch": 0, "close_time_epoch": 100_000, "volume_fp": 5000.0}
+    db.upsert_market(conn, {"ticker": "IN-R1", "in_r1_window": 1, **common})
+    db.upsert_market(conn, {"ticker": "IN-R2", "in_r2_window": 1, **common})
+    conn.commit()
+
+    client = _NoOpDiscoveryClient()
+    stats = asyncio.run(pass1.run_pass1(client, conn, max_series_this_run=0))
+
+    assert "IN-R1" in client.trade_fetch_calls
+    assert "IN-R2" in client.trade_fetch_calls
+    assert stats["markets_processed"] == 2
+
+
 def test_run_pass1_min_open_duration_none_processes_short_markets(tmp_path):
     # The escape hatch: min_open_duration_s=None fetches even a sub-24h
     # market (for a targeted verification run).
