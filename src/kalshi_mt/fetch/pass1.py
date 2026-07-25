@@ -14,13 +14,22 @@ findings -- see api/kalshi.py's module docstring):
     are frequently stale for older markets; Phase 3's construction re-derives
     "did this actually resolve" from trade/settlement evidence, not from
     trusting these fields.
-  - Historical series scan (2021-01-01..2023-01-01): live /markets returns
-    NOTHING for this era (confirmed live). The only path is paging every
-    series' /historical/markets by cursor until reaching the window or
-    exhausting that series' history, checkpointed per series in
-    series_scan_state so a multi-hour scan (spec's own "1-3 day polite
-    fetch" estimate, run across the full ~12k-series universe) survives a
-    restart and can be driven forward a bounded amount per invocation.
+  - Historical series scan (2021-01-01..R2_END): live /markets returns
+    NOTHING for the early era and, as measured 2026-07-25, very little for
+    anything not in its recent trailing window either -- so this scan spans
+    the WHOLE R1+R2 range rather than stopping at 2023-01-01 as it first
+    did. That original cap, plus the false assumption that the live sweep
+    covered everything after it, is what produced the 2023-2025 coverage
+    hole (59 R1 markets closing in 2023, 561 in 2024, against 13,302 for
+    2022); discover_historical_series' own docstring has the measurements.
+    The only path for that era is paging every series' /historical/markets
+    by cursor until reaching the window or exhausting that series' history,
+    checkpointed per series in series_scan_state so a multi-hour scan
+    (spec's own "1-3 day polite fetch" estimate, run across the full
+    ~12k-series universe) survives a restart and can be driven forward a
+    bounded amount per invocation. It overlaps the live sweep on purpose;
+    upsert_market dedups on ticker, and two independent paths covering the
+    same range is what would have caught the hole sooner.
 
 Then, for every discovered market: resolve series_ticker (GET
 /events/{event_ticker} -- not a Market field) and category, fetch the ~11
@@ -176,7 +185,7 @@ async def discover_live_window(
 # -- Sub-phase B: historical series scan (2021-01-01 .. 2023-01-01) ---------
 
 async def discover_historical_series(
-    client: KalshiClient, conn, start_ts: int = R1_START, end_ts: int = LIVE_METADATA_FLOOR,
+    client: KalshiClient, conn, start_ts: int = R1_START, end_ts: int = R2_END,
     max_series_this_run: int | None = None, max_pages_per_series: int = 20,
     max_concurrent_series: int = 20,
 ) -> dict[str, int]:
@@ -185,15 +194,61 @@ async def discover_historical_series(
     finding as discover_live_window and resolve_series_and_category: a
     sequential per-series loop sat well below the configured rate
     ceiling). Pagination WITHIN one series stays sequential (page N+1
-    needs page N's cursor)."""
+    needs page N's cursor).
+
+    `end_ts` spans the WHOLE R1+R2 window (through R2_END), not just up to
+    LIVE_METADATA_FLOOR as it originally did. That original split assumed the
+    live /markets sweep fully covered 2023-01-01 onward, so this scan only
+    had to serve 2021-2022. Measured 2026-07-25, that assumption is FALSE:
+    the live endpoint does not serve long-closed markets, and its own
+    completed sub-window checkpoints prove it -- 2023-01-01..2023-06-09
+    returned 0 markets, 2023-06-09..2023-11-16 returned 14,
+    2024-04-23..2024-09-30 returned 29, and 2025-08-15..2026-01-22 returned
+    375, versus 9.48M for 2026-01-22..2026-06-30. It only reliably serves a
+    recent trailing window. The result was a coverage hole from ~2023 through
+    ~2025 that left just 59 R1 markets closing in 2023 and 561 in 2024
+    (against 13,302 for 2022, via this scan) -- fatal for BDW's by-year psi
+    (their Table 9 reports 2023 and 2024) and for R2, whose fee (2025-05-01)
+    and publication (2025-09-08) boundaries both sit inside the hole.
+
+    /historical/markets DOES serve that era (probe: KXHIGHNY page 1 returned
+    864 markets closing in 2026 and 136 in 2025), and because pages come
+    newest-first this scan was ALREADY paging through them and discarding
+    every one via the window guard below -- so widening the window recovers
+    the data at nearly no extra API cost. Overlap with the live sweep is
+    harmless: upsert_market dedups on ticker.
+
+    A series whose checkpoint was written under a NARROWER end_ts is
+    re-scanned from page 1 rather than trusted as 'done', since its earlier
+    pages dropped in-window markets. `scan_window_end` on series_scan_state
+    is what makes that detectable instead of silent -- the whole point being
+    that a stale 'done' is exactly how the original hole stayed invisible."""
     all_series = await client.list_series(limit=100_000)  # /series has no real limit param; client-truncates
     for s in all_series:
         if db.get_series_scan_state(conn, s.ticker) is None:
             db.upsert_series_scan_state(conn, {
                 "series_ticker": s.ticker, "status": "pending", "pages_fetched": 0,
                 "markets_found_in_window": 0, "reached_before_window": 0, "last_cursor": None,
+                "scan_window_end": None,
             })
     conn.commit()
+
+    # Re-open any series last scanned under a narrower window (or before
+    # scan_window_end existed at all -- NULL). Reset to page 1: the discarded
+    # markets are only recoverable by re-walking the cursor from the start,
+    # and a resumed mid-history cursor would silently keep the gap.
+    reopened = conn.execute(
+        "UPDATE series_scan_state SET status='pending', last_cursor=NULL, pages_fetched=0, "
+        "markets_found_in_window=0, reached_before_window=0 "
+        "WHERE (scan_window_end IS NULL OR scan_window_end < ?)",
+        (end_ts,),
+    ).rowcount
+    conn.commit()
+    if reopened:
+        log.info(
+            "re-opened %d series whose checkpoint predates the current scan window end %d",
+            reopened, end_ts,
+        )
 
     pending = conn.execute(
         "SELECT series_ticker, last_cursor, pages_fetched FROM series_scan_state "
@@ -231,7 +286,12 @@ async def discover_historical_series(
                         ce = row_dict["close_time_epoch"]
                         if ce is not None:
                             close_epochs.append(ce)
-                        if ce is not None and start_ts <= ce < end_ts:
+                        # Inclusive on both ends, matching _window_flags'
+                        # own R1_START<=ce<=R1_END / R2_START<=ce<=R2_END --
+                        # an exclusive upper bound would drop a market
+                        # closing exactly at R2_END (23:59:59) that the
+                        # window flags themselves count as in-window.
+                        if ce is not None and start_ts <= ce <= end_ts:
                             db.upsert_market(conn, row_dict)
                             found_in_series += 1
                     # Pages are reverse-chronological (empirically confirmed,
@@ -248,6 +308,11 @@ async def discover_historical_series(
                     "series_ticker": ticker, "status": "done" if stop else "in_progress",
                     "pages_fetched": pages_so_far, "markets_found_in_window": found_in_series,
                     "reached_before_window": int(reached_before), "last_cursor": cursor,
+                    # Stamped on EVERY checkpoint, not just the terminal one:
+                    # the pages fetched so far were filtered against this
+                    # end_ts, so a series left 'in_progress' must resume
+                    # rather than be re-opened from page 1 next run.
+                    "scan_window_end": end_ts,
                 })
                 conn.commit()
                 if stop:

@@ -141,6 +141,12 @@ CREATE TABLE IF NOT EXISTS series_scan_state (
   reached_before_window INTEGER DEFAULT 0,  -- 1 once a page's rows are all older than the scan window
   last_cursor TEXT,
   updated_ts TEXT
+  -- scan_window_end INTEGER -- added via _ensure_column (table predates it):
+  -- the end_ts this series was scanned UNDER. A series scanned under a
+  -- NARROWER window discarded markets that a wider window would keep, so it
+  -- is not really "done" for the wider one -- discover_historical_series
+  -- detects that and re-scans from page 1 instead of trusting the stale
+  -- 'done'. Prevents a recurrence of the 2026-07-25 coverage hole.
 );
 
 -- Resumable checkpoint for discover_live_window's N concurrent live-sweep
@@ -227,6 +233,7 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     _ensure_column(conn, "markets", "settlement_value_dollars", "REAL")
     _ensure_column(conn, "markets", "last_price_dollars", "REAL")
+    _ensure_column(conn, "series_scan_state", "scan_window_end", "INTEGER")
     conn.execute(
         "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)", (SCHEMA_VERSION,)
     )
@@ -353,20 +360,27 @@ def get_series_scan_state(conn: sqlite3.Connection, series_ticker: str) -> sqlit
 
 
 def upsert_series_scan_state(conn: sqlite3.Connection, row: dict) -> None:
+    """`scan_window_end` records the end_ts the series was scanned UNDER, so a
+    later widening of the scan window is detectable rather than silently
+    treated as already-complete -- see fetch/pass1.py's
+    discover_historical_series for the 2026-07-25 incident this exists to
+    prevent recurring."""
     conn.execute(
         """
         INSERT INTO series_scan_state (series_ticker, status, pages_fetched,
                                        markets_found_in_window, reached_before_window,
-                                       last_cursor, updated_ts)
+                                       last_cursor, scan_window_end, updated_ts)
         VALUES (:series_ticker, :status, :pages_fetched, :markets_found_in_window,
-                :reached_before_window, :last_cursor, :now)
+                :reached_before_window, :last_cursor, :scan_window_end, :now)
         ON CONFLICT(series_ticker) DO UPDATE SET
             status=excluded.status, pages_fetched=excluded.pages_fetched,
             markets_found_in_window=excluded.markets_found_in_window,
             reached_before_window=excluded.reached_before_window,
-            last_cursor=excluded.last_cursor, updated_ts=excluded.updated_ts
+            last_cursor=excluded.last_cursor,
+            scan_window_end=excluded.scan_window_end,
+            updated_ts=excluded.updated_ts
         """,
-        {**row, "now": now_utc_iso()},
+        {"scan_window_end": None, **row, "now": now_utc_iso()},
     )
 
 

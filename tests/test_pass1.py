@@ -170,8 +170,12 @@ def test_discover_live_window_skips_subwindow_already_done(tmp_path):
 # ---------------------------------------------------------------------------
 
 class _FakeSeriesScanClient:
-    """One series (LONGRUN) needs 3 pages to reach the window; another
-    (SHORT) is exhausted after 1 empty-ish page inside the window already."""
+    """One series (LONGRUN) needs 3 pages to walk past the window; another
+    (SHORT) is exhausted after 1 page inside the window already.
+
+    LR-mid sits just after LIVE_METADATA_FLOOR -- the era the scan used to
+    DISCARD when end_ts stopped at that floor, which is exactly the
+    2023-2025 coverage hole. It must now be kept."""
 
     def __init__(self):
         self.series = [KalshiSeries.model_validate({"ticker": "LONGRUN", "category": "Weather"}),
@@ -184,15 +188,16 @@ class _FakeSeriesScanClient:
     async def list_historical_markets(self, tickers=None, event_ticker=None,
                                        series_ticker=None, cursor=None, limit=100):
         self.hist_calls.append((series_ticker, cursor))
-        window_epoch = pass1.R1_START + 3600  # inside [R1_START, LIVE_METADATA_FLOOR)
-        recent_epoch = pass1.LIVE_METADATA_FLOOR + 3600  # too recent, outside the scan window
-        old_epoch = pass1.R1_START - 3600  # before the scan window entirely
+        window_epoch = pass1.R1_START + 3600            # early R1 -- always kept
+        mid_epoch = pass1.LIVE_METADATA_FLOOR + 3600    # the formerly-discarded era
+        too_recent_epoch = pass1.R2_END + 3600          # past R2_END -- still out of scope
+        old_epoch = pass1.R1_START - 3600               # before the window entirely
 
         if series_ticker == "LONGRUN":
             if cursor is None:
-                return [_market("LR-recent", recent_epoch)], "p2"
+                return [_market("LR-too-recent", too_recent_epoch)], "p2"
             if cursor == "p2":
-                return [_market("LR-window", window_epoch)], "p3"
+                return [_market("LR-mid", mid_epoch)], "p3"
             if cursor == "p3":
                 return [_market("LR-old", old_epoch)], None  # page's rows all predate the window -> stop
         if series_ticker == "SHORT":
@@ -208,15 +213,67 @@ def test_discover_historical_series_pages_until_window_and_checkpoints(tmp_path)
     assert stats["series_remaining"] == 0
 
     tickers = {r[0] for r in conn.execute("SELECT ticker FROM markets").fetchall()}
-    assert "LR-window" in tickers
     assert "SH-window" in tickers
-    assert "LR-recent" not in tickers  # outside [R1_START, LIVE_METADATA_FLOOR)
-    assert "LR-old" not in tickers
+    # The regression guard for the 2023-2025 coverage hole: markets closing
+    # after LIVE_METADATA_FLOOR were silently dropped while end_ts stopped
+    # there, on the false premise that the live sweep covered that era.
+    assert "LR-mid" in tickers
+    assert "LR-too-recent" not in tickers  # genuinely past R2_END
+    assert "LR-old" not in tickers         # genuinely before R1_START
 
     longrun_state = db.get_series_scan_state(conn, "LONGRUN")
     assert longrun_state["status"] == "done"
     assert longrun_state["pages_fetched"] == 3
     assert longrun_state["reached_before_window"] == 1
+    assert longrun_state["scan_window_end"] == pass1.R2_END
+
+
+def test_discover_historical_series_reopens_series_scanned_under_narrower_window(tmp_path):
+    """A series marked 'done' under a NARROWER end_ts discarded markets the
+    current window keeps, so it is not really done -- it must be re-scanned
+    from page 1 (a resumed mid-history cursor would preserve the gap). This
+    is the guard against silently inheriting a stale 'done', which is how
+    the original 2023-2025 hole stayed invisible for days."""
+    conn = db.connect(tmp_path / "t.db")
+    db.upsert_series_scan_state(conn, {
+        "series_ticker": "LONGRUN", "status": "done", "pages_fetched": 3,
+        "markets_found_in_window": 1, "reached_before_window": 1, "last_cursor": "p3",
+        "scan_window_end": pass1.LIVE_METADATA_FLOOR,  # the old, narrower window
+    })
+    conn.commit()
+
+    client = _FakeSeriesScanClient()
+    asyncio.run(pass1.discover_historical_series(client, conn))
+
+    # Re-walked from page 1 (cursor=None), so the formerly-dropped era lands.
+    assert (("LONGRUN", None)) in client.hist_calls
+    tickers = {r[0] for r in conn.execute("SELECT ticker FROM markets").fetchall()}
+    assert "LR-mid" in tickers
+    state = db.get_series_scan_state(conn, "LONGRUN")
+    assert state["scan_window_end"] == pass1.R2_END
+
+
+def test_discover_historical_series_does_not_reopen_current_window_series(tmp_path):
+    """The converse: a series already scanned under the CURRENT end_ts must
+    not be re-walked -- otherwise every run would redo the whole ~12k-series
+    universe from page 1."""
+    conn = db.connect(tmp_path / "t.db")
+    db.upsert_series_scan_state(conn, {
+        "series_ticker": "LONGRUN", "status": "done", "pages_fetched": 3,
+        "markets_found_in_window": 1, "reached_before_window": 1, "last_cursor": "p3",
+        "scan_window_end": pass1.R2_END,
+    })
+    db.upsert_series_scan_state(conn, {
+        "series_ticker": "SHORT", "status": "done", "pages_fetched": 1,
+        "markets_found_in_window": 1, "reached_before_window": 0, "last_cursor": None,
+        "scan_window_end": pass1.R2_END,
+    })
+    conn.commit()
+
+    client = _FakeSeriesScanClient()
+    stats = asyncio.run(pass1.discover_historical_series(client, conn))
+    assert stats["series_processed_this_run"] == 0
+    assert client.hist_calls == []
 
 
 def test_discover_historical_series_resumable_via_max_series_this_run(tmp_path):
