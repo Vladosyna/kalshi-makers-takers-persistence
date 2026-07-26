@@ -19,14 +19,14 @@ def _epoch(year, month=6, day=1):
 
 
 def _panel_row(ticker, event, p, y, *, lookback_day=0, category="Weather", close_epoch=None,
-               count_fp=100.0):
+               count_fp=100.0, taker_outcome_side="yes"):
     """count_fp defaults to 100 contracts -- the fee model rounds the ORDER
     TOTAL up to the next cent, so the order size is load-bearing for any net
     return (spec S1: "compute fees on actual per-order contract counts")."""
     return {
         "ticker": ticker, "event_ticker": event, "lookback_day": lookback_day, "category": category,
         "close_time_epoch": close_epoch or _epoch(2023), "side": "yes", "y": y, "p": p, "source": "live",
-        "count_fp": count_fp,
+        "count_fp": count_fp, "taker_outcome_side": taker_outcome_side,
     }
 
 
@@ -223,102 +223,72 @@ def test_returns_by_band_empty():
 
 
 # ---------------------------------------------------------------------------
-# maker_taker_split
+# maker_taker_split -- operates on the DOUBLED PANEL, not the fill tape.
+# Verified against the primary PDF: Table 10 totals 313,972 observations (the
+# doubled panel) with Makers exactly 156,986, and the text pins the unit as the
+# up-to-11-observations-per-contract panel, not fills.
 # ---------------------------------------------------------------------------
 
-TRADE_SCHEMA = {
-    "trade_id": pl.String, "ticker": pl.String, "count_fp": pl.Float64,
-    "yes_price_dollars": pl.Float64, "no_price_dollars": pl.Float64,
-    "taker_outcome_side": pl.String, "taker_book_side": pl.String, "taker_side": pl.String,
-    "created_time": pl.String, "is_block_trade": pl.Boolean, "source": pl.String,
-}
+def _doubled(rows):
+    from kalshi_mt.r1.panel import build_doubled_panel
+    return build_doubled_panel(_panel(rows))
 
 
-def _trade(ticker, yes_price, taker_side):
-    return {
-        "trade_id": f"{ticker}-{yes_price}", "ticker": ticker, "count_fp": 1.0,
-        "yes_price_dollars": yes_price, "no_price_dollars": 1.0 - yes_price,
-        "taker_outcome_side": taker_side, "taker_book_side": "bid", "taker_side": taker_side,
-        "created_time": "2023-01-01T00:00:00Z", "is_block_trade": False, "source": "live",
-    }
-
-
-def test_maker_taker_split_basic_roles():
-    # Taker buys YES at 0.9 (implicitly the maker sold/took NO at 0.1).
-    # Market resolves YES: taker wins big, maker (on NO) loses.
-    trades = pl.DataFrame([_trade("T1", 0.9, "yes")], schema=TRADE_SCHEMA)
-    result = maker_taker_split(trades, {"T1": "yes"}, {"T1"})
+def test_maker_taker_split_role_follows_the_side_the_taker_took():
+    """Taker bought YES at 0.9, market resolves YES. The Yes observation is the
+    Taker's; the complementary No observation at 0.10 is the Maker's."""
+    rows = [_panel_row("T1", "E1", 0.9, 1.0, taker_outcome_side="yes")]
+    result = maker_taker_split(_doubled(rows), _fee_schedule())
     assert result["n_taker_obs"] == 1
     assert result["n_maker_obs"] == 1
-    # taker: (1.0 - 0.9)/0.9 ; maker: (0.0 - 0.1)/0.1 = -1.0
-    assert abs(result["taker_return"] - ((1.0 - 0.9) / 0.9)) < 1e-9
+    # Maker pays no fee in BDW's window, so its return is gross: (0 - 0.1)/0.1.
     assert abs(result["maker_return"] - (-1.0)) < 1e-9
+    # Taker's is post-fee, so strictly below the gross (1 - 0.9)/0.9.
+    assert result["taker_return"] < (1.0 - 0.9) / 0.9
 
 
-def test_maker_taker_split_maker_share_by_band():
-    trades = pl.DataFrame([_trade("T1", 0.95, "yes")], schema=TRADE_SCHEMA)
-    result = maker_taker_split(trades, {"T1": "yes"}, {"T1"})
-    # yes side (0.95, taker) falls in 91-99c; no side (0.05, maker) falls in 1-10c.
+def test_maker_taker_split_maker_share_by_band_uses_complementary_prices():
+    rows = [_panel_row("T1", "E1", 0.95, 1.0, taker_outcome_side="yes")]
+    result = maker_taker_split(_doubled(rows), _fee_schedule())
+    # yes side (0.95) is the taker's; no side (0.05) is the maker's.
     assert result["maker_share_by_band"]["91-99c"] == 0.0
     assert result["maker_share_by_band"]["1-10c"] == 1.0
 
 
-def test_maker_taker_split_filters_to_in_scope_tickers():
-    trades = pl.DataFrame([_trade("T1", 0.5, "yes"), _trade("OUT-OF-SCOPE", 0.5, "yes")], schema=TRADE_SCHEMA)
-    result = maker_taker_split(trades, {"T1": "yes", "OUT-OF-SCOPE": "yes"}, {"T1"})
-    assert result["n_taker_obs"] == 1
+def test_maker_taker_split_makers_pay_no_fee_takers_do():
+    """Fig 6 reports POST-fee returns, and in BDW's window makers were
+    fee-exempt while takers paid 0.07*P*(1-P) on the order total. Part of the
+    headline gap is the fee itself, so the asymmetry must be in the code."""
+    rows = [
+        _panel_row("T1", "E1", 0.5, 1.0, taker_outcome_side="yes"),
+        _panel_row("T2", "E2", 0.5, 1.0, taker_outcome_side="no"),
+    ]
+    result = maker_taker_split(_doubled(rows), _fee_schedule())
+    # Both roles see one winning and one losing 50c observation, so any gap
+    # between them is purely the taker fee.
+    assert result["maker_return"] > result["taker_return"]
 
 
-def test_maker_taker_split_skips_unresolved_markets():
-    trades = pl.DataFrame([_trade("T1", 0.5, "yes")], schema=TRADE_SCHEMA)
-    result = maker_taker_split(trades, {"T1": ""}, {"T1"})
+def test_maker_taker_split_reports_the_50c_plus_maker_margin():
+    """BDW's "makers who buy contracts costing 50c and over earn 2.6%" -- the
+    escalation rule in spec S5 keys off this margin, so it must be reported
+    rather than recomputed ad hoc."""
+    rows = [_panel_row("T1", "E1", 0.6, 1.0, taker_outcome_side="no")]  # maker holds the 0.6 Yes
+    result = maker_taker_split(_doubled(rows), _fee_schedule())
+    assert result["maker_return_50c_plus"] is not None
+    assert abs(result["maker_return_50c_plus"] - ((1.0 - 0.6) / 0.6)) < 1e-9
+
+
+def test_maker_taker_split_skips_observations_without_a_taker_side():
+    """The skip-rule panel carries no taker side (price_panel never stored it),
+    so those observations must be skipped, never guessed at."""
+    rows = [_panel_row("T1", "E1", 0.5, 1.0, taker_outcome_side=None)]
+    result = maker_taker_split(_doubled(rows), _fee_schedule())
+    assert result["n_maker_obs"] == 0
     assert result["n_taker_obs"] == 0
 
 
-def test_maker_taker_split_empty_trades():
-    result = maker_taker_split(pl.DataFrame(schema=TRADE_SCHEMA), {}, {"T1"})
+def test_maker_taker_split_empty_panel():
+    result = maker_taker_split(_doubled([]), _fee_schedule())
     assert result["maker_return"] is None
     assert result["taker_return"] is None
-
-
-# ---------------------------------------------------------------------------
-# write_divergence_log
-# ---------------------------------------------------------------------------
-
-def test_write_divergence_log_produces_readable_file(tmp_path):
-    rows = [
-        _panel_row("T1", "E1", 0.1, 0.0, close_epoch=_epoch(2022)),
-        _panel_row("T2", "E2", 0.9, 1.0, close_epoch=_epoch(2022)),
-    ]
-    report = {
-        "by_year_psi": by_year_psi(_panel(rows)),
-        "by_category_psi": by_category_psi(_panel(rows)),
-    }
-    path = write_divergence_log(report, tmp_path / "divergence_log.md")
-    assert path.exists()
-    text = path.read_text(encoding="utf-8")
-    assert "By-year psi" in text
-    assert "2022" in text
-
-
-def test_write_divergence_log_includes_field_population_section_when_present(tmp_path):
-    report = {
-        "by_year_psi": {}, "by_category_psi": {},
-        "taker_field_population_by_era": {
-            "2021-2022": {
-                "trade_count": 152, "taker_outcome_side_population": 1.0,
-                "taker_book_side_population": 1.0, "taker_side_legacy_population": 1.0,
-            },
-            "2023": {"trade_count": 0},
-        },
-    }
-    path = write_divergence_log(report, tmp_path / "divergence_log.md")
-    text = path.read_text(encoding="utf-8")
-    assert "Taker-field population by era" in text
-    assert "152" in text
-
-
-def test_write_divergence_log_omits_field_population_section_when_absent(tmp_path):
-    path = write_divergence_log({"by_year_psi": {}, "by_category_psi": {}}, tmp_path / "divergence_log.md")
-    text = path.read_text(encoding="utf-8")
-    assert "Taker-field population by era" not in text

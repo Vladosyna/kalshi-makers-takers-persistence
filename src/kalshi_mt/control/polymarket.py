@@ -364,7 +364,7 @@ def build_polymarket_panel(
             # PANEL_SCHEMA carries the fill size for Kalshi's fee model; the
             # control venue has no fee computation here, and the archive is
             # market-level rather than fill-level, so there is nothing to put.
-            "count_fp": None,
+            "count_fp": None, "taker_outcome_side": None,
         })
 
     if not records:

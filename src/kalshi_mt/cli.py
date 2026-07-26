@@ -441,14 +441,14 @@ def r1() -> None:
         by_category = by_category_psi(yes_only)
         clustering_check = verify_two_way_equals_one_way_clustering(yes_only)
 
-        resolutions = {
-            r[0]: r[1] for r in conn.execute(
-                f"SELECT ticker, result FROM markets WHERE ticker IN "
-                f"({','.join('?' * len(in_scope))})", list(in_scope)
-            ).fetchall()
-        } if in_scope else {}
+        # Maker/taker runs on the DOUBLED PANEL, not the raw fill tape: BDW's
+        # Table 10 totals 313,972 observations (the doubled panel) with Makers
+        # exactly 156,986, and their own text -- "because we include the same
+        # contract at different points during its lifetime ... up to 11 times"
+        # -- only parses if the returns are panel-based. The tape is still read
+        # for field_population_by_era, which is genuinely a per-fill diagnostic.
+        mt_split = maker_taker_split(doubled, fee_schedule)
         trades = trade_store.read_all()
-        mt_split = maker_taker_split(trades, resolutions, in_scope)
         field_population = field_population_by_era(trades)
 
         log_path = write_divergence_log(

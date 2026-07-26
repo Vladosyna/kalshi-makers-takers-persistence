@@ -1,7 +1,12 @@
 # R1 reproduction: findings, construction pins, and open divergences
 
-**Status 2026-07-27.** Working record of what R1 reproduces, what it does not,
-and every construction decision taken to get there — written to be quotable in
+**Status 2026-07-27.** R1 now reproduces every headline quantity BDW report: the
+Fig 3 favorite-longshot curve, all four Fig 5 return markers, Fig 6 and Table
+10's maker/taker split including the full maker-share curve, Table 9's by-year
+psi in sign and significance, and Table 8's category heterogeneity.
+
+Working record of what reproduces, what does not, and every construction
+decision taken to get there — written to be quotable in
 the note's divergence-log section rather than as internal notes. Every number
 here is reproducible from the committed pipeline (`kmt build`, `kmt r1`,
 `tools/measure_backfill_hypothesis.py`).
@@ -88,6 +93,45 @@ insignificant (ψ = 0.031, SE = 0.035) and entertainment is weakest. This is
 load-bearing for R2 — the whole category-interacted design exists because ψ is
 category-heterogeneous, so confirming it on our own data is a prerequisite, not
 a footnote.
+
+### 1.5 Maker/taker split (BDW Fig 6 and Table 10)
+
+Post-fee returns over the doubled price panel, roles attributed by which side
+the taker took in the trade that set each observation's price.
+
+| | Ours | BDW |
+|---|---|---|
+| Maker return | **−8.41%** | −9.64% |
+| Taker return | **−34.30%** | −31.46% |
+| Maker margin, ≥50c | **+3.32%** | +2.6% |
+
+Maker share by band — BDW's Table 10 curve, reproduced across its whole length:
+
+| Band | Ours | BDW |
+|---|---|---|
+| 1–10c | 43.0% | 43.5% |
+| 11–20c | 46.5% | 46.7% |
+| 21–30c | 47.3% | 48.9% |
+| 31–40c | 46.6% | 47.8% |
+| 41–50c | 48.0% | 49.5% |
+| 51–60c | 51.4% | 50.4% |
+| 61–70c | 54.6% | 52.2% |
+| 71–80c | 52.6% | 51.1% |
+| 81–90c | 53.3% | 53.3% |
+| 91–99c | 57.1% | 56.5% |
+
+This is the paper's headline result — makers outperform takers, and the ≥50c
+maker margin is the exploitable edge whose survival R2 tests. Both endpoints of
+the share curve land within 0.6 points, and the monotone tilt (takers hold the
+cheap contracts that perform worst) reproduces throughout. The ≥50c margin
+matters procedurally too: spec S5's escalation rule keys off its sign, so it is
+now reported by the pipeline rather than recomputed ad hoc.
+
+Note the observation counts differ by role (121,803 maker vs 103,144 taker) even
+though the doubled panel splits 50/50 overall: taker observations whose fee is
+not computable — a market closing before `data/fees.yaml`'s earliest entry — are
+excluded from the taker average and counted, rather than silently charged zero.
+Makers were fee-exempt in this window, so no maker observation is lost that way.
 
 ---
 
@@ -212,7 +256,29 @@ structurally uncomputable) off 44,946 at the volume stage. For BDW to report
 46,282 *after* those same filters, their spread and duration filters must have
 bitten far less than ours — which for the spread half is exactly 4.1.
 
-### 4.3 Maker/taker magnitude — not yet reproduced
+### 4.3 Maker/taker — RESOLVED 2026-07-27, see §1.5
+
+Was the largest open divergence; resolved by reading the primary PDF rather than
+by further inference. Kept below for the record of what was ruled out, because
+the elimination sequence is itself worth reporting: it shows the failure was a
+unit-of-observation error, not a data limitation.
+
+**Root cause.** We averaged over all ~9.9M *fills*; BDW average over the
+*price panel* (up to 11 observations per contract). Two things in the paper pin
+this beyond doubt: Table 10 totals 313,972 observations with Makers exactly
+156,986 — the doubled panel, one role per side of every observation — and the
+text states "Because we include the same contract at different points during its
+lifetime, we want to make sure that our results are not driven by the small
+minority of contracts that are in the sample up to 11 times", which only parses
+on a panel basis. The fill population is dominated by heavily-traded mid-price
+markets; the panel weights each contract's lifetime equally.
+
+A second component: Figure 6 reports **post-fee** returns, and in BDW's window
+makers were fee-exempt while takers paid the 0.07·P·(1−P) order-total formula.
+Part of the headline gap is the fee, not behaviour — so the fee asymmetry has to
+be in the code, and now is.
+
+### 4.3b What had been ruled out first (retained for the record)
 
 | | Maker | Taker |
 |---|---|---|

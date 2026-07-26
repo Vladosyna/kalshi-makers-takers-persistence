@@ -157,64 +157,92 @@ def returns_by_band(yes_only: pl.DataFrame, fee_schedule: dict[str, Any]) -> dic
 
 
 def maker_taker_split(
-    trades: pl.DataFrame, resolutions: dict[str, str], in_scope_tickers: set[str],
+    doubled: pl.DataFrame, fee_schedule: dict[str, Any],
 ) -> dict[str, Any]:
-    """Fig 6/Table 10: average return to makers vs takers, and maker share
-    by price band. Every trade has exactly one taker (taker_outcome_side)
-    and one implicit maker on the opposite outcome side at the
-    complementary price (1 - yes_price) -- doubled basis by construction,
-    matching how Fig 6's maker-share curve is itself defined.
+    """Fig 6 / Table 10: post-fee return to Makers vs Takers, and Maker share
+    by price band, over the DOUBLED PRICE PANEL.
 
-    `trades` is Pass 2's raw Parquet trade tape (store/parquet.py's
-    TradeStore.read_all() or read_for_ticker, already filtered to
-    in_scope_tickers by the caller if desired -- filtering here too for
-    safety). `resolutions` is {ticker: 'yes'|'no'}.
+    The unit of observation is a panel observation, not a fill -- verified
+    against the primary PDF, which is explicit on both counts. Table 10 totals
+    313,972 observations with Makers exactly 156,986, i.e. the doubled panel
+    with one role per side of every observation; and the text states "Because
+    we include the same contract at different points during its lifetime, we
+    want to make sure that our results are not driven by the small minority of
+    contracts that are in the sample up to 11 times" -- which only makes sense
+    if the returns are computed over the up-to-11-per-contract panel.
+
+    Averaging over all ~9.9M fills instead (what this did until 2026-07-27)
+    gives a flat ~50% Maker share in every band and a far smaller return gap:
+    the fill population is dominated by heavily-traded mid-price markets, while
+    the panel weights each contract's lifetime equally.
+
+    Role attribution follows the trade that SET each observation's price: if
+    that trade's taker bought Yes, the Yes-side observation is the Taker's and
+    the complementary No-side observation at (1 - p) is the Maker's, and vice
+    versa. Kalshi records this directly, which is why BDW note it "eliminates a
+    major source of measurement error" versus inferring direction Lee-Ready
+    style.
+
+    Fees are asymmetric and that is not incidental: Figure 6 reports POST-fee
+    returns, and in BDW's window Makers paid no fee at all while Takers paid
+    the 0.07*P*(1-P) order-total formula. Part of the headline gap is therefore
+    the fee itself, not behaviour.
     """
-    if trades.is_empty() or not in_scope_tickers:
+    if doubled.is_empty():
         return {"maker_return": None, "taker_return": None, "maker_share_by_band": {}}
 
-    trades = trades.filter(pl.col("ticker").is_in(list(in_scope_tickers)))
     maker_returns: list[float] = []
     taker_returns: list[float] = []
+    maker_returns_50c_plus: list[float] = []
     band_counts: dict[str, dict[str, int]] = {}
+    gap_excluded = 0
 
-    for row in trades.iter_rows(named=True):
-        result = resolutions.get(row["ticker"])
+    for row in doubled.iter_rows(named=True):
+        price, payout, side = row["p"], row["y"], row["side"]
         taker_side = row["taker_outcome_side"]
-        yes_price = row["yes_price_dollars"]
-        if result not in ("yes", "no") or taker_side not in ("yes", "no") or yes_price is None:
+        if taker_side not in ("yes", "no") or price is None or not (0.0 < price < 1.0):
             continue
-        if not (0.0 < yes_price < 1.0):
+        role = "taker" if side == taker_side else "maker"
+
+        band = price_band(price)
+        counts = band_counts.setdefault(band, {"maker": 0, "total": 0})
+        counts["total"] += 1
+        if role == "maker":
+            counts["maker"] += 1
+
+        if role == "maker":
+            # No maker fee in BDW's window -- post-fee equals gross here.
+            ret = (payout - price) / price
+            maker_returns.append(ret)
+            if price >= 0.50:
+                maker_returns_50c_plus.append(ret)
             continue
-        payout_yes = 1.0 if result == "yes" else 0.0
 
-        yes_role = "taker" if taker_side == "yes" else "maker"
-        no_role = "taker" if taker_side == "no" else "maker"
+        count = row.get("count_fp")
+        if count is None or count <= 0:
+            gap_excluded += 1
+            continue
+        as_of = datetime.fromtimestamp(row["close_time_epoch"], tz=timezone.utc).isoformat()
+        try:
+            order_fee = fee_usd_for(fee_schedule, "taker", row["category"], count, price, as_of)
+        except FeeScheduleGapError:
+            gap_excluded += 1
+            continue
+        taker_returns.append((payout - price - order_fee / count) / price)
 
-        for side_price, side_role, side_payout in (
-            (yes_price, yes_role, payout_yes),
-            (1.0 - yes_price, no_role, 1.0 - payout_yes),
-        ):
-            band = price_band(side_price)
-            counts = band_counts.setdefault(band, {"maker": 0, "total": 0})
-            counts["total"] += 1
-            side_return = (side_payout - side_price) / side_price
-            if side_role == "maker":
-                counts["maker"] += 1
-                maker_returns.append(side_return)
-            else:
-                taker_returns.append(side_return)
-
-    maker_share_by_band = {
-        band: (counts["maker"] / counts["total"] if counts["total"] else None)
-        for band, counts in band_counts.items()
-    }
     return {
         "maker_return": float(np.mean(maker_returns)) if maker_returns else None,
         "taker_return": float(np.mean(taker_returns)) if taker_returns else None,
+        "maker_return_50c_plus": (
+            float(np.mean(maker_returns_50c_plus)) if maker_returns_50c_plus else None
+        ),
         "n_maker_obs": len(maker_returns),
         "n_taker_obs": len(taker_returns),
-        "maker_share_by_band": maker_share_by_band,
+        "fee_schedule_gap_excluded": gap_excluded,
+        "maker_share_by_band": {
+            band: (c["maker"] / c["total"] if c["total"] else None)
+            for band, c in band_counts.items()
+        },
     }
 
 

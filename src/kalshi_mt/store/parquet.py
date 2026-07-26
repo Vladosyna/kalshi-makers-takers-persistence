@@ -154,15 +154,20 @@ class TradeStore:
 
     def last_trade_at_or_before(
         self, refs: list[tuple[str, int, int]],
-    ) -> dict[tuple[str, int], tuple[float, int, float]]:
+    ) -> dict[tuple[str, int], tuple[float, int, float, str]]:
         """For each (ticker, key, ref_epoch), the last fill at or before
-        ref_epoch: {(ticker, key): (yes_price_dollars, created_epoch, count_fp)}.
+        ref_epoch: {(ticker, key): (yes_price, created_epoch, count_fp, taker_outcome_side)}.
 
         count_fp comes back because the fee model is defined on the ORDER
         TOTAL with ceil-to-cent rounding, so the actual order size is required
         to compute a fee correctly -- assuming 1 contract inflates the
         effective rate up to 14x on the cheapest strikes (spec S1: "compute
         fees on actual per-order contract counts").
+
+        taker_outcome_side comes back because BDW attribute each panel
+        observation to a Maker or a Taker by the side of the trade that SET
+        that price -- their Table 10 totals 313,972 (the doubled panel) with
+        Makers exactly 156,986, i.e. one role per side of every observation.
 
         This is the exact primitive BDW's "last trade before the same time"
         describes, evaluated against Pass 2's full tape rather than by
@@ -186,10 +191,10 @@ class TradeStore:
             """
             SELECT r.ticker, r.key, t.yes_price_dollars,
                    CAST(epoch(CAST(t.created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch,
-                   t.count_fp
+                   t.count_fp, t.taker_outcome_side
             FROM refs r
             ASOF JOIN (
-                SELECT ticker, yes_price_dollars, created_time, count_fp,
+                SELECT ticker, yes_price_dollars, created_time, count_fp, taker_outcome_side,
                        CAST(epoch(CAST(created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch
                 FROM read_parquet(?)
                 WHERE yes_price_dollars IS NOT NULL AND created_time IS NOT NULL
@@ -199,7 +204,7 @@ class TradeStore:
             [str(self.base / "month=*" / "trades.parquet")],
         ).fetchall()
         con.close()
-        return {(t, k): (p, ce, c) for t, k, p, ce, c in rows}
+        return {(t, k): (p, ce, c, tk) for t, k, p, ce, c, tk in rows}
 
     def trade_count_by_ticker(self) -> dict[str, int]:
         """Fills per ticker, counted from the tape itself -- the authoritative

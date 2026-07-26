@@ -44,6 +44,11 @@ PANEL_SCHEMA = {
     # (spec S1: "compute fees on actual per-order contract counts").
     # None on the skip-rule panel -- price_panel never stored it.
     "count_fp": pl.Float64,
+    # Which outcome side the TAKER was on in the trade that set this price.
+    # BDW attribute every panel observation to a Maker or a Taker from this
+    # (their Table 10: 313,972 doubled observations, Makers exactly 156,986
+    # -- one role per side). None on the skip-rule panel.
+    "taker_outcome_side": pl.String,
 }
 
 
@@ -75,7 +80,7 @@ def build_yes_only_panel(conn, in_scope_tickers: set[str]) -> pl.DataFrame:
             "lookback_day": r["lookback_day"], "category": r["category"],
             "close_time_epoch": r["close_time_epoch"], "side": "yes",
             "y": 1.0 if r["result"] == "yes" else 0.0, "p": r["yes_price_dollars"],
-            "source": r["source"], "count_fp": None,
+            "source": r["source"], "count_fp": None, "taker_outcome_side": None,
         })
     return pl.DataFrame(records, schema=PANEL_SCHEMA) if records else pl.DataFrame(schema=PANEL_SCHEMA)
 
@@ -131,14 +136,14 @@ def build_yes_only_panel_backfilled(conn, trade_store, in_scope_tickers: set[str
     # Days 1..10: reference instants walked back from day 0's OWN timestamp, in
     # ET calendar days, via the same helpers fetch/pass1.py uses.
     refs: list[tuple[str, int, int]] = []
-    for (ticker, _key), (_price, t0_epoch, _count) in day0.items():
+    for (ticker, _key), (_price, t0_epoch, _count, _tk) in day0.items():
         t0_et = epoch_to_et(t0_epoch)
         for day in range(1, PANEL_LOOKBACK_DAYS + 1):
             refs.append((ticker, day, et_to_epoch(shift_et_calendar_days(t0_et, day))))
     later = trade_store.last_trade_at_or_before(refs) if refs else {}
 
     records: list[dict[str, Any]] = []
-    for (ticker, day), (price, _created, count) in {**day0, **later}.items():
+    for (ticker, day), (price, _created, count, taker_side) in {**day0, **later}.items():
         if price is None:
             continue
         m = markets[ticker]
@@ -147,7 +152,7 @@ def build_yes_only_panel_backfilled(conn, trade_store, in_scope_tickers: set[str
             "lookback_day": day, "category": m["category"],
             "close_time_epoch": m["close_time_epoch"], "side": "yes",
             "y": 1.0 if m["result"] == "yes" else 0.0, "p": price,
-            "source": "tape", "count_fp": count,
+            "source": "tape", "count_fp": count, "taker_outcome_side": taker_side,
         })
     return pl.DataFrame(records, schema=PANEL_SCHEMA) if records else pl.DataFrame(schema=PANEL_SCHEMA)
 
