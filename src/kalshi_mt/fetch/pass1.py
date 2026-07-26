@@ -82,12 +82,25 @@ def _window_flags(close_time_epoch: int | None) -> tuple[int, int]:
     return in_r1, in_r2
 
 
-def _market_to_row(m: KalshiMarket, source: str) -> dict[str, Any]:
+def _market_to_row(
+    m: KalshiMarket, source: str,
+    series_ticker: str | None = None, category: str | None = None,
+) -> dict[str, Any]:
+    """`series_ticker`/`category` are optional because only ONE discovery path
+    can know them: the historical series scan pages a specific series, so its
+    loop key IS the series of every market on those pages, and the /series
+    catalog it already holds gives that series' category. The live sweep
+    genuinely cannot -- series_ticker is not a Market field (see the module
+    docstring), which is why resolve_series_and_category exists at all.
+    Passing them here makes resolution FREE for historically-discovered
+    markets instead of costing one GET /events per event; upsert_market
+    COALESCEs, so leaving them None never erases an already-resolved value."""
     close_epoch = iso_to_epoch(m.close_time)
     open_epoch = iso_to_epoch(m.open_time)
     in_r1, in_r2 = _window_flags(close_epoch)
     return {
         "ticker": m.ticker, "event_ticker": m.event_ticker, "status": m.status,
+        "series_ticker": series_ticker, "category": category,
         "result": m.result, "open_time": m.open_time, "open_time_epoch": open_epoch,
         "close_time": m.close_time, "close_time_epoch": close_epoch,
         "settlement_ts": m.settlement_ts, "volume_fp": m.volume_fp, "metadata_source": source,
@@ -229,6 +242,12 @@ async def discover_historical_series(
     is what makes that detectable instead of silent -- the whole point being
     that a stale 'done' is exactly how the original hole stayed invisible."""
     all_series = await client.list_series(limit=100_000)  # /series has no real limit param; client-truncates
+    # This scan pages ONE series at a time, so its loop key is the series of
+    # every market it finds -- persisting that (plus the catalog's category)
+    # makes resolve_series_and_category's GET /events unnecessary for
+    # historically-discovered markets, which after the window widening is most
+    # of the universe.
+    category_by_series = {s.ticker: s.category for s in all_series}
     for s in all_series:
         if db.get_series_scan_state(conn, s.ticker) is None:
             db.upsert_series_scan_state(conn, {
@@ -287,7 +306,10 @@ async def discover_historical_series(
                 if markets:
                     close_epochs: list[int] = []
                     for m in markets:
-                        row_dict = _market_to_row(m, "historical")
+                        row_dict = _market_to_row(
+                            m, "historical",
+                            series_ticker=ticker, category=category_by_series.get(ticker),
+                        )
                         ce = row_dict["close_time_epoch"]
                         if ce is not None:
                             close_epochs.append(ce)

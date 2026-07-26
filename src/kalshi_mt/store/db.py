@@ -258,8 +258,22 @@ def upsert_market(conn: sqlite3.Connection, row: dict) -> None:
                 :volume_fp, :metadata_source, :in_r1_window, :in_r2_window,
                 :settlement_value_dollars, :last_price_dollars, :now, :now)
         ON CONFLICT(ticker) DO UPDATE SET
-            event_ticker=excluded.event_ticker, series_ticker=excluded.series_ticker,
-            category=excluded.category, status=excluded.status, result=excluded.result,
+            event_ticker=excluded.event_ticker,
+            -- COALESCE, not plain assignment: discovery upserts don't carry
+            -- series_ticker/category (the live sweep genuinely cannot know
+            -- them -- they are not Market fields), so a plain
+            -- SET x=excluded.x NULLED OUT whatever
+            -- resolve_series_and_category had already resolved every time a
+            -- market was re-discovered. Confirmed live 2026-07-26: the
+            -- 12,184-series re-scan wiped category for the entire universe,
+            -- leaving 0/39,783 R1 and 0/13,623 calendar-2024 markets with a
+            -- category -- which would have silently blocked BDW Table 8's
+            -- by-category psi AND the frozen-2024 mix R2's whole composition
+            -- decomposition is built on. Resolution only ever ADDS
+            -- information, so a NULL from discovery must never overwrite it.
+            series_ticker=COALESCE(excluded.series_ticker, markets.series_ticker),
+            category=COALESCE(excluded.category, markets.category),
+            status=excluded.status, result=excluded.result,
             open_time=excluded.open_time, open_time_epoch=excluded.open_time_epoch,
             close_time=excluded.close_time, close_time_epoch=excluded.close_time_epoch,
             settlement_ts=excluded.settlement_ts,

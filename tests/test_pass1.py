@@ -228,6 +228,48 @@ def test_discover_historical_series_pages_until_window_and_checkpoints(tmp_path)
     assert longrun_state["scan_window_end"] == pass1.R2_END
 
 
+def test_discover_historical_series_persists_series_and_category(tmp_path):
+    """The scan pages ONE series at a time, so its loop key is the series of
+    every market it finds -- persisting that plus the catalog's category makes
+    resolve_series_and_category's GET /events unnecessary for these markets."""
+    conn = db.connect(tmp_path / "t.db")
+    client = _FakeSeriesScanClient()
+    asyncio.run(pass1.discover_historical_series(client, conn))
+
+    row = conn.execute(
+        "SELECT series_ticker, category FROM markets WHERE ticker='SH-window'"
+    ).fetchone()
+    assert row["series_ticker"] == "SHORT"
+    assert row["category"] == "Economics"
+
+
+def test_upsert_market_discovery_does_not_erase_resolved_series_and_category(tmp_path):
+    """Discovery upserts carry no series_ticker/category (the live sweep
+    genuinely cannot know them), so a plain SET x=excluded.x NULLED OUT
+    whatever resolution had already found on every re-discovery. Confirmed
+    live 2026-07-26: a full re-scan wiped category for the whole universe,
+    silently breaking BDW Table 8 and the frozen-2024 mix. Resolution only
+    ever adds information -- a NULL from discovery must not overwrite it."""
+    conn = db.connect(tmp_path / "t.db")
+    db.upsert_market(conn, {"ticker": "A-1", "event_ticker": "EVT-1"})
+    conn.execute(
+        "UPDATE markets SET series_ticker='KXHIGHNY', category='Climate and Weather' "
+        "WHERE ticker='A-1'"
+    )
+    conn.commit()
+
+    # Re-discovery: same market seen again, with no series/category in hand.
+    db.upsert_market(conn, {"ticker": "A-1", "event_ticker": "EVT-1", "volume_fp": 900.0})
+    conn.commit()
+
+    row = conn.execute(
+        "SELECT series_ticker, category, volume_fp FROM markets WHERE ticker='A-1'"
+    ).fetchone()
+    assert row["series_ticker"] == "KXHIGHNY"          # preserved
+    assert row["category"] == "Climate and Weather"    # preserved
+    assert row["volume_fp"] == 900.0                   # other fields still refresh
+
+
 def test_discover_historical_series_reopens_series_scanned_under_narrower_window(tmp_path):
     """A series marked 'done' under a NARROWER end_ts discarded markets the
     current window keeps, so it is not really done -- it must be re-scanned
