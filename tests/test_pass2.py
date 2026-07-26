@@ -70,6 +70,29 @@ def test_select_in_scope_includes_in_progress(tmp_path):
     assert pass2.select_in_scope_tickers(conn) == ["OK-1"]
 
 
+def test_select_in_scope_window_restricts_to_one_window(tmp_path):
+    """Without `window`, R1 and R2 candidates come back in whatever order
+    SQLite produces (no ORDER BY) -- confirmed live 2026-07-26, that let the
+    larger R2 backlog dominate a run even though R1's tape is what the
+    count-reconciliation gate needs first. `window='r1'` restricts to R1."""
+    conn = db.connect(tmp_path / "t.db")
+    _seed_market(conn, "IN-R1", in_r1=1)
+    db.upsert_market(conn, {
+        "ticker": "IN-R2", "volume_fp": 2000.0,
+        "open_time_epoch": 0, "close_time_epoch": 10 * 86400,
+        "in_r1_window": 0, "in_r2_window": 1,
+    })
+    db.upsert_quote(conn, {
+        "ticker": "IN-R2", "end_period_ts": 10 * 86400, "yes_bid_close": 0.45,
+        "yes_ask_close": 0.50, "spread": 0.05, "source": "live",
+    })
+    conn.commit()
+
+    assert pass2.select_in_scope_tickers(conn, window="r1") == ["IN-R1"]
+    assert set(pass2.select_in_scope_tickers(conn, window="r2")) == {"IN-R2"}
+    assert set(pass2.select_in_scope_tickers(conn)) == {"IN-R1", "IN-R2"}
+
+
 # ---------------------------------------------------------------------------
 # fetch_full_tape_for_market
 # ---------------------------------------------------------------------------
@@ -210,3 +233,40 @@ def test_run_pass2_respects_ticker_limit(tmp_path):
     client = _FakeTapeClient()
     stats = asyncio.run(pass2.run_pass2(client, conn, store, ticker_limit=1))
     assert stats["tickers_attempted"] == 1
+
+
+class _FakeFlakyTapeClient:
+    """FLAKY raises on its first call (a stand-in for an exhausted-retry
+    5xx, real and observed live 2026-07-24 in the sibling pass1 loop) --
+    STABLE completes normally in the same batch."""
+
+    async def get_trades(self, ticker=None, min_ts=None, max_ts=None, cursor=None, limit=100):
+        if ticker == "FLAKY":
+            raise RuntimeError("simulated exhausted-retry 5xx")
+        return [_trade("t1", ticker=ticker)], None
+
+    async def get_historical_trades(self, ticker=None, min_ts=None, max_ts=None, cursor=None, limit=100):
+        return [], None
+
+
+def test_run_pass2_one_ticker_failure_does_not_lose_others_progress(tmp_path):
+    """return_exceptions=True: one ticker's exhausted-retry failure must not
+    crash the whole run and lose every other in-flight market's tape --
+    confirmed live 2026-07-24 for the sibling pass1 panel/quote loop."""
+    conn = db.connect(tmp_path / "t.db")
+    _seed_market(conn, "FLAKY")
+    _seed_market(conn, "STABLE")
+    store = TradeStore(tmp_path / "parquet")
+    client = _FakeFlakyTapeClient()
+
+    stats = asyncio.run(pass2.run_pass2(client, conn, store))
+    assert stats["tickers_attempted"] == 2
+    assert stats["tickers_failed"] == 1
+    assert stats["markets_done"] == 1
+    assert len(store.read_for_ticker("STABLE")) == 1
+
+    progress = db.get_pass2_progress(conn, "STABLE")
+    assert progress["status"] == "done"
+    # FLAKY has no completed checkpoint, so select_in_scope_tickers picks
+    # it back up next invocation instead of it being silently lost.
+    assert set(pass2.select_in_scope_tickers(conn)) == {"FLAKY"}

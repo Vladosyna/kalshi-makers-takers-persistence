@@ -34,15 +34,32 @@ MIN_VOLUME_FP = 1000.0
 MAX_SPREAD = 0.20
 MIN_OPEN_SECONDS = 24 * 3600
 
+# Mirrors fetch/pass1.py's ANALYSIS_WINDOW_COLUMNS -- a fixed name->column
+# map so a window argument can only ever become one of these two literals in
+# SQL (the column itself can't be a bound parameter).
+ANALYSIS_WINDOW_COLUMNS = {"r1": "in_r1_window", "r2": "in_r2_window"}
 
-def select_in_scope_tickers(conn) -> list[str]:
+
+def select_in_scope_tickers(conn, window: str | None = None) -> list[str]:
     """Markets meeting the volume/spread/open-duration proxy filter, that
     Pass 2 hasn't already finished. Requires an open_time and close_time
     (both needed for the open>=24h check) and a quote row (needed for the
     spread check) -- a market missing either simply isn't in scope yet, not
-    an error; Pass 1's coverage determines what's checkable here."""
+    an error; Pass 1's coverage determines what's checkable here.
+
+    `window` ('r1' | 'r2' | None) restricts to one analysis window. Without
+    it, R1 and R2 candidates are returned in whatever order SQLite happens
+    to produce (no ORDER BY), which in practice lets the larger R2 backlog
+    dominate a run even though R1's full tape is what the count-
+    reconciliation gate needs first (spec S1: count deltas before estimate
+    deltas) -- confirmed live 2026-07-26: with R1's own panel/quote fetch
+    freshly complete, in-scope candidates were R1=33,228 / R2=58,750, nearly
+    2:1 against R1. None keeps the original both-windows behaviour."""
+    scope_sql = ""
+    if window is not None:
+        scope_sql = f" AND m.{ANALYSIS_WINDOW_COLUMNS[window]} = 1"
     rows = conn.execute(
-        """
+        f"""
         SELECT m.ticker
         FROM markets m
         JOIN quotes q ON q.ticker = m.ticker
@@ -53,6 +70,7 @@ def select_in_scope_tickers(conn) -> list[str]:
           AND m.open_time_epoch IS NOT NULL AND m.close_time_epoch IS NOT NULL
           AND (m.close_time_epoch - m.open_time_epoch) >= ?
           AND (p.status IS NULL OR p.status != 'done')
+        {scope_sql}
         """,
         (MIN_VOLUME_FP, MAX_SPREAD, MIN_OPEN_SECONDS),
     ).fetchall()
@@ -126,12 +144,13 @@ def _trade_row(t: KalshiTrade, ticker: str, source: str) -> dict[str, Any]:
 async def run_pass2(
     client: KalshiClient, conn, trade_store: TradeStore,
     ticker_limit: int | None = None, max_pages_per_market: int | None = None,
-    max_concurrent: int = 20,
+    max_concurrent: int = 20, window: str | None = None,
 ) -> dict[str, Any]:
     """Fetch full tapes for in-scope markets not yet done. `ticker_limit`
     bounds how many markets this invocation processes (each to completion,
     modulo `max_pages_per_market`) -- pass small values for verification
-    runs rather than the full in-scope set.
+    runs rather than the full in-scope set. `window` ('r1' | 'r2' | None)
+    restricts to one analysis window -- see select_in_scope_tickers.
 
     Different tickers' fetches run CONCURRENTLY (bounded by
     `max_concurrent`, sharing the client's TokenBucket) -- same latency-
@@ -141,7 +160,7 @@ async def run_pass2(
     single-threaded cooperative scheduling one call always runs to
     completion before another coroutine's code can execute -- there is no
     point where two concurrent tickers' writes can interleave mid-operation."""
-    tickers = select_in_scope_tickers(conn)
+    tickers = select_in_scope_tickers(conn, window=window)
     if ticker_limit is not None:
         tickers = tickers[:ticker_limit]
 
@@ -154,7 +173,24 @@ async def run_pass2(
                 client, conn, trade_store, ticker, max_pages=max_pages_per_market
             )
 
-    results = await asyncio.gather(*[_fetch_one(t) for t in tickers])
+    # return_exceptions=True -- same failure class fetch/pass1.py's
+    # panel/quote loop hit live 2026-07-24: an upstream 5xx that exhausts
+    # tenacity's retries on ONE ticker must not crash the whole run and lose
+    # every other in-flight market's tape. A failed market's pass2_progress
+    # is left as whatever fetch_full_tape_for_market last checkpointed
+    # (in_progress with its real cursor, or absent if it failed on the very
+    # first page), so select_in_scope_tickers naturally re-selects it next
+    # invocation -- no special bookkeeping beyond logging and not crediting
+    # its trade count.
+    raw_results = await asyncio.gather(*[_fetch_one(t) for t in tickers], return_exceptions=True)
+    results = []
+    tickers_failed = 0
+    for ticker, r in zip(tickers, raw_results):
+        if isinstance(r, BaseException):
+            tickers_failed += 1
+            log.warning("full-tape fetch failed for %s: %r", ticker, r)
+            continue
+        results.append(r)
     total_trades = sum(r["trade_count"] for r in results)
     done_count = sum(1 for r in results if r["status"] == "done")
 
@@ -165,5 +201,6 @@ async def run_pass2(
     conn.commit()
     return {
         "tickers_attempted": len(tickers), "markets_done": done_count,
+        "tickers_failed": tickers_failed,
         "total_trades_written": total_trades, "results": results,
     }

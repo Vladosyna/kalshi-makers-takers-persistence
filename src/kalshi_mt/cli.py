@@ -220,16 +220,30 @@ def fetch_pass2(
     max_pages: int | None = typer.Option(
         None, help="Bound pages fetched per market this run (for a resumable, incremental pass)."
     ),
+    window: str | None = typer.Option(
+        None, "--window",
+        help="Restrict to one analysis window ('r1' or 'r2'). Without an ORDER BY, in-scope "
+             "candidates come back in whatever order SQLite produces, letting the larger R2 "
+             "backlog dominate a run even though R1's full tape is what the count-reconciliation "
+             "gate needs first (spec S1). Pass 'r1' to fetch R1's remainder first. Omit for the "
+             "original both-windows behaviour.",
+    ),
 ) -> None:
     """Full trade tape for in-scope (volume/spread/duration-filtered) contracts
     only. Resumable per-market via pass2_progress."""
     from kalshi_mt.api.http import TokenBucket
     from kalshi_mt.api.kalshi import KalshiClient
-    from kalshi_mt.fetch.pass2 import run_pass2
+    from kalshi_mt.fetch.pass2 import ANALYSIS_WINDOW_COLUMNS, run_pass2
     from kalshi_mt.store import db
     from kalshi_mt.store.parquet import TradeStore
 
     config = load_config()
+    if window is not None and window not in ANALYSIS_WINDOW_COLUMNS:
+        typer.secho(
+            f"--window must be one of {sorted(ANALYSIS_WINDOW_COLUMNS)}, got {window!r}",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=1)
 
     async def _run():
         bucket = TokenBucket(
@@ -241,7 +255,8 @@ def fetch_pass2(
         trade_store = TradeStore(config["storage"]["parquet_dir"])
         try:
             return await run_pass2(
-                client, conn, trade_store, ticker_limit=ticker_limit, max_pages_per_market=max_pages
+                client, conn, trade_store, ticker_limit=ticker_limit,
+                max_pages_per_market=max_pages, window=window,
             )
         finally:
             await client.aclose()
