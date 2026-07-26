@@ -1,5 +1,37 @@
 # Known gap: live-sweep sub-window 1769072393-1782863999
 
+**Status as of 2026-07-26: materially closed by a second, independent path.**
+The follow-up below (draining the stuck cursor) is no longer the only route to
+coverage here, and is no longer blocking.
+
+`discover_historical_series` originally stopped at `LIVE_METADATA_FLOOR`
+(2023-01-01) because the live sweep was assumed to cover everything after it.
+That assumption turned out to be false in its own right (see the 2026-07-25
+coverage-hole fix in git history), so the historical scan now spans the whole
+R1+R2 window -- which means it independently walks this date range too,
+per series, without touching the pagination position that 504s.
+
+Measured 2026-07-26, for close times inside this range:
+
+| Source | Markets |
+|---|---|
+| historical series scan | 1,949,467 |
+| live sweep | 12,306,824 |
+| **total** | **14,256,291** |
+
+And for the one narrow slice that stayed stuck, `(1778381723, 1778726513)`:
+285,076 markets, of which 131,466 arrived via the historical scan.
+
+So this range is no longer a single-path dependency, and its counts are
+substantial rather than suspiciously empty -- the failure signature that made
+the original hole detectable. What is still NOT proven is exact completeness;
+that is what the R1 count-reconciliation gate (spec S1) exists to establish,
+and this range sits in R2 rather than R1. Draining the remaining slices is
+therefore an optional tightening, not a prerequisite. The original write-up
+follows unchanged, for the record.
+
+---
+
 **Status as of 2026-07-18:** worked around, not fully collected. Needs
 follow-up before this range is treated as complete for R1/R2 discovery.
 
