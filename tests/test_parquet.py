@@ -133,3 +133,24 @@ def test_trade_count_by_ticker_across_month_partitions(tmp_path):
     store.append([_trade("t1", ticker="ABC-1", created_time="2022-12-30T17:15:45Z")])
     store.append([_trade("t2", ticker="ABC-1", created_time="2023-01-02T00:00:00Z")])
     assert store.trade_count_by_ticker() == {"ABC-1": 2}
+
+
+def test_append_read_modify_write_leaves_no_temp_file_and_survives_repeat(tmp_path):
+    """append() is a read-modify-write of ONE path. On Windows a
+    memory-mapped read keeps a mapping open on it, so replacing that same file
+    fails with ERROR_USER_MAPPED_FILE (os error 1224) -- confirmed live
+    2026-07-26, a 29,285-ticker Pass 2 run lost exactly one ticker to it. The
+    write also goes through a temp file and an atomic replace, so a crash
+    partway cannot leave a truncated partition; nothing temporary may survive.
+    """
+    store = TradeStore(tmp_path / "parquet")
+    store.append([_trade("t1", ticker="ABC-1")])
+    # Second append must re-read and rewrite the SAME partition.
+    assert store.append([_trade("t2", ticker="ABC-1")]) == 1
+    assert store.trade_count_by_ticker() == {"ABC-1": 2}
+
+    leftovers = list((tmp_path / "parquet").rglob("*.tmp"))
+    assert leftovers == []
+    # The month partition still holds exactly one readable data file.
+    files = sorted(p.name for p in (tmp_path / "parquet").rglob("*") if p.is_file())
+    assert files == ["trades.parquet"]

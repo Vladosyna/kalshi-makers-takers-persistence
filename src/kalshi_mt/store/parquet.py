@@ -13,6 +13,7 @@ themselves.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import duckdb
@@ -68,7 +69,16 @@ class TradeStore:
             path = self._partition(month)
             path.parent.mkdir(parents=True, exist_ok=True)
             if path.exists():
-                existing = pl.read_parquet(path)
+                # memory_map=False is load-bearing on Windows, not a tuning
+                # knob: this is a read-modify-write of ONE path, and a
+                # memory-mapped read keeps a mapping open on it for as long as
+                # the DataFrame lives, so the write below fails with
+                # ERROR_USER_MAPPED_FILE (os error 1224). Confirmed live
+                # 2026-07-26 -- a Pass 2 run of 29,285 R1 tickers lost exactly
+                # one to it ("cannot be performed on a file with a
+                # user-mapped section open", month=2025-01). Reading eagerly
+                # into memory leaves nothing mapped by the time we replace it.
+                existing = pl.read_parquet(path, memory_map=False)
                 keys = existing.select("trade_id")
                 part = part.join(keys, on="trade_id", how="anti")
                 if part.is_empty():
@@ -76,7 +86,13 @@ class TradeStore:
                 merged = pl.concat([existing, part], how="diagonal")
             else:
                 merged = part
-            merged.write_parquet(path)
+            # Write to a sibling temp file, then atomically replace. A crash
+            # partway through write_parquet would otherwise leave a truncated
+            # partition -- and unlike a lost page, that destroys trades already
+            # committed by earlier appends, which no resume can recover.
+            tmp = path.with_suffix(".parquet.tmp")
+            merged.write_parquet(tmp)
+            os.replace(tmp, path)
             written += len(part)
         return written
 
