@@ -96,3 +96,40 @@ def test_dollar_volume_by_ticker_across_month_partitions(tmp_path):
                           created_time="2023-01-02T00:00:00Z")])
     volumes = store.dollar_volume_by_ticker()
     assert abs(volumes["ABC-1"] - 1000.0) < 1e-9
+
+
+def test_trade_count_by_ticker_empty_store(tmp_path):
+    store = TradeStore(tmp_path / "parquet")
+    assert store.trade_count_by_ticker() == {}
+
+
+def test_trade_count_by_ticker_counts_fills_from_the_tape(tmp_path):
+    """The authoritative side of spec S3's recorded-vs-fetched contract:
+    pass2_progress.trade_count is a running sum committed AFTER the Parquet
+    write, so a crash in that window leaves trades on disk uncredited and the
+    counter drifts low for good. Counting the tape has no such failure mode."""
+    store = TradeStore(tmp_path / "parquet")
+    store.append([
+        _trade("t1", ticker="ABC-1"),
+        _trade("t2", ticker="ABC-1"),
+        _trade("t3", ticker="XYZ-1"),
+    ])
+    assert store.trade_count_by_ticker() == {"ABC-1": 2, "XYZ-1": 1}
+
+
+def test_trade_count_by_ticker_is_unaffected_by_a_replayed_page(tmp_path):
+    """The exact drift scenario: the same page re-fetched on resume is deduped
+    to zero NEW rows (so the running counter never gets credited), but the
+    tape-derived count still reports the true total."""
+    store = TradeStore(tmp_path / "parquet")
+    page = [_trade("t1", ticker="ABC-1"), _trade("t2", ticker="ABC-1")]
+    assert store.append(page) == 2
+    assert store.append(page) == 0          # replay: nothing new written
+    assert store.trade_count_by_ticker() == {"ABC-1": 2}
+
+
+def test_trade_count_by_ticker_across_month_partitions(tmp_path):
+    store = TradeStore(tmp_path / "parquet")
+    store.append([_trade("t1", ticker="ABC-1", created_time="2022-12-30T17:15:45Z")])
+    store.append([_trade("t2", ticker="ABC-1", created_time="2023-01-02T00:00:00Z")])
+    assert store.trade_count_by_ticker() == {"ABC-1": 2}

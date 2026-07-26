@@ -205,7 +205,7 @@ async def discover_live_window(
 async def discover_historical_series(
     client: KalshiClient, conn, start_ts: int = R1_START, end_ts: int = R2_END,
     max_series_this_run: int | None = None, max_pages_per_series: int = 20,
-    max_concurrent_series: int = 20,
+    max_concurrent_series: int = 20, series_catalog: list[Any] | None = None,
 ) -> dict[str, int]:
     """Different series are fully independent -- their cursor walks run
     CONCURRENTLY, bounded by `max_concurrent_series` (same latency-bound
@@ -241,7 +241,15 @@ async def discover_historical_series(
     pages dropped in-window markets. `scan_window_end` on series_scan_state
     is what makes that detectable instead of silent -- the whole point being
     that a stale 'done' is exactly how the original hole stayed invisible."""
-    all_series = await client.list_series(limit=100_000)  # /series has no real limit param; client-truncates
+    # `series_catalog` lets run_pass1 fetch the ~12k-row /series catalog ONCE
+    # and share it with resolve_series_and_category, which needs the same
+    # data; each fetching its own was one redundant full-catalog GET per
+    # invocation. Standalone callers (tests, a targeted re-scan) still just
+    # get it themselves.
+    all_series = (
+        series_catalog if series_catalog is not None
+        else await client.list_series(limit=100_000)  # /series has no real limit param; client-truncates
+    )
     # This scan pages ONE series at a time, so its loop key is the series of
     # every market it finds -- persisting that (plus the catalog's category)
     # makes resolve_series_and_category's GET /events unnecessary for
@@ -275,7 +283,8 @@ async def discover_historical_series(
         )
 
     pending = conn.execute(
-        "SELECT series_ticker, last_cursor, pages_fetched FROM series_scan_state "
+        "SELECT series_ticker, last_cursor, pages_fetched, markets_found_in_window "
+        "FROM series_scan_state "
         "WHERE status IN ('pending', 'in_progress') ORDER BY series_ticker"
     ).fetchall()
     if max_series_this_run is not None:
@@ -286,7 +295,12 @@ async def discover_historical_series(
     async def _scan_series(row) -> int:
         async with semaphore:
             ticker, cursor, pages_so_far = row["series_ticker"], row["last_cursor"], row["pages_fetched"]
-            found_in_series = 0
+            # Seeded from the checkpoint like pages_so_far, not reset to 0:
+            # markets_found_in_window is written back on every checkpoint, so
+            # resetting made a series resumed across runs report only its LAST
+            # segment's finds while pages_fetched kept accumulating -- two
+            # counters in the same row disagreeing about the same scan.
+            found_in_series = row["markets_found_in_window"] or 0
             reached_before = False
             # Checkpointed every page (not just once at the end) -- a
             # request failure partway through a 20-page scan used to lose
@@ -359,8 +373,19 @@ async def discover_historical_series(
     # retried on the next call" instead of taking the whole batch down.
     results = await asyncio.gather(*[_scan_series(row) for row in pending], return_exceptions=True)
     series_processed = len(pending)
-    series_failed = sum(1 for r in results if isinstance(r, BaseException))
-    markets_found_total = sum(r for r in results if not isinstance(r, BaseException))
+    # Log WHICH series failed, not just how many. Confirmed live 2026-07-25:
+    # a full re-scan silently left 391 series 'pending' (each having raised on
+    # its first page, before any checkpoint write), and the only trace was a
+    # count in the returned stats -- the log itself was clean INFO throughout,
+    # so nothing pointed at what to retry or investigate.
+    series_failed = 0
+    markets_found_total = 0
+    for row, r in zip(pending, results):
+        if isinstance(r, BaseException):
+            series_failed += 1
+            log.warning("historical scan failed for series %s: %r", row["series_ticker"], r)
+        else:
+            markets_found_total += r
 
     remaining = conn.execute(
         "SELECT COUNT(*) FROM series_scan_state WHERE status IN ('pending', 'in_progress')"
@@ -403,7 +428,7 @@ def _scope_predicate(
 async def resolve_series_and_category(
     client: KalshiClient, conn, batch_size: int | None = 500,
     min_volume_fp: float | None = None, min_open_duration_s: float | None = None,
-    max_concurrent: int = 20,
+    max_concurrent: int = 20, series_catalog: list[Any] | None = None,
 ) -> dict[str, int]:
     """`min_volume_fp` and `min_open_duration_s` restrict resolution to
     markets that could plausibly clear R1/R2's own $1k volume and >=24h open
@@ -430,13 +455,19 @@ async def resolve_series_and_category(
     event_ticker caching happens in a first pass (collect the unique set,
     resolve it concurrently) so no event is ever fetched twice even though
     many tickers can share one event_ticker."""
-    all_series = await client.list_series(limit=100_000)
+    all_series = (
+        series_catalog if series_catalog is not None
+        else await client.list_series(limit=100_000)
+    )
     category_by_series = {s.ticker: s.category for s in all_series}
 
     scope_sql, scope_params = _scope_predicate(min_volume_fp, min_open_duration_s)
+    # series_resolution_terminal excludes events already proven to carry no
+    # series -- see the terminal-vs-retryable split below.
     query = (
         "SELECT ticker, event_ticker FROM markets "
-        "WHERE series_ticker IS NULL AND event_ticker IS NOT NULL" + scope_sql
+        "WHERE series_ticker IS NULL AND event_ticker IS NOT NULL "
+        "AND COALESCE(series_resolution_terminal, 0) = 0" + scope_sql
     )
     rows = conn.execute(query, scope_params).fetchall()
     if batch_size is not None:
@@ -445,19 +476,36 @@ async def resolve_series_and_category(
     unique_events = list({row["event_ticker"] for row in rows})
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def _fetch_event(event_ticker: str) -> tuple[str, str | None]:
+    async def _fetch_event(event_ticker: str) -> tuple[str, str | None, bool]:
+        """Third element separates the two ways this can yield no series:
+        `answered=True` means /events really returned this event and it simply
+        has no series_ticker (terminal -- retrying can only get the same
+        answer), while `answered=False` means the lookup itself failed
+        (client.get_event swallows request errors into None), which must stay
+        retryable. Collapsing them is what made resolution re-issue the same
+        doomed GET /events every run forever."""
         async with semaphore:
             event = await client.get_event(event_ticker)
-            return event_ticker, (event.series_ticker if event else None)
+            if event is None:
+                return event_ticker, None, False
+            return event_ticker, event.series_ticker, True
 
     resolved_events = await asyncio.gather(*[_fetch_event(e) for e in unique_events])
-    event_cache: dict[str, str | None] = dict(resolved_events)
+    event_cache: dict[str, str | None] = {e: s for e, s, _ in resolved_events}
+    event_answered: dict[str, bool] = {e: a for e, _, a in resolved_events}
 
     resolved = 0
+    terminal = 0
     for row in rows:
         ticker, event_ticker = row["ticker"], row["event_ticker"]
         series_ticker = event_cache.get(event_ticker)
         if series_ticker is None:
+            if event_answered.get(event_ticker):
+                conn.execute(
+                    "UPDATE markets SET series_resolution_terminal = 1 WHERE ticker = ?",
+                    (ticker,),
+                )
+                terminal += 1
             continue
         conn.execute(
             "UPDATE markets SET series_ticker = ?, category = ? WHERE ticker = ?",
@@ -467,10 +515,15 @@ async def resolve_series_and_category(
     conn.commit()
     remaining_query = (
         "SELECT COUNT(*) FROM markets "
-        "WHERE series_ticker IS NULL AND event_ticker IS NOT NULL" + scope_sql
+        "WHERE series_ticker IS NULL AND event_ticker IS NOT NULL "
+        "AND COALESCE(series_resolution_terminal, 0) = 0" + scope_sql
     )
     remaining = conn.execute(remaining_query, scope_params).fetchone()[0]
-    return {"resolved_this_run": resolved, "remaining": remaining}
+    return {
+        "resolved_this_run": resolved,
+        "terminal_no_series_this_run": terminal,
+        "remaining": remaining,
+    }
 
 
 # -- Sub-phase D: boundary-tick price panel -----------------------------------
@@ -700,12 +753,16 @@ async def run_pass1(
     whole-universe, so reconciliation coverage is never narrowed. None keeps
     the original both-windows behaviour."""
     live_stats = await discover_live_window(client, conn, max_pages=live_max_pages)
+    # One /series fetch shared by both phases that need it -- each fetching
+    # its own was a redundant full ~12k-row catalog GET per invocation.
+    series_catalog = await client.list_series(limit=100_000)
     hist_stats = await discover_historical_series(
-        client, conn, max_series_this_run=max_series_this_run
+        client, conn, max_series_this_run=max_series_this_run, series_catalog=series_catalog,
     )
     resolve_stats = await resolve_series_and_category(
         client, conn, batch_size=series_resolution_batch_size,
         min_volume_fp=min_volume_fp, min_open_duration_s=min_open_duration_s,
+        series_catalog=series_catalog,
     )
 
     scope_sql, extra_params = _scope_predicate(min_volume_fp, min_open_duration_s)

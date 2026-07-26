@@ -434,6 +434,63 @@ def test_resolve_series_and_category_min_volume_filters_thin_markets(tmp_path):
     assert thin[0] is None
 
 
+class _FakeNoSeriesEventClient:
+    """EVT-NONE resolves to a real event that genuinely carries NO series
+    (terminal); EVT-FAIL's lookup fails outright, which get_event turns into
+    None (retryable). The two must not be treated the same."""
+
+    def __init__(self):
+        self.event_calls = []
+
+    async def list_series(self, category=None, limit=200):
+        return [KalshiSeries.model_validate({"ticker": "KXHIGHNY", "category": "Climate and Weather"})]
+
+    async def get_event(self, event_ticker):
+        self.event_calls.append(event_ticker)
+        if event_ticker == "EVT-NONE":
+            return KalshiEvent.model_validate({"event_ticker": "EVT-NONE"})  # no series_ticker
+        return None  # stand-in for a failed lookup
+
+
+def test_resolve_marks_genuinely_series_less_events_terminal_but_retries_failures(tmp_path):
+    """resolve's only filter was series_ticker IS NULL, so an event that truly
+    has no series was re-looked-up every run forever. Terminal (the event
+    answered, with no series) must drop out; a failed lookup must not."""
+    conn = db.connect(tmp_path / "t.db")
+    db.upsert_market(conn, {"ticker": "A-NONE", "event_ticker": "EVT-NONE"})
+    db.upsert_market(conn, {"ticker": "A-FAIL", "event_ticker": "EVT-FAIL"})
+    conn.commit()
+
+    client = _FakeNoSeriesEventClient()
+    stats = asyncio.run(pass1.resolve_series_and_category(client, conn))
+    assert stats["resolved_this_run"] == 0
+    assert stats["terminal_no_series_this_run"] == 1
+    assert stats["remaining"] == 1  # only the retryable one
+
+    # Second run must re-try the failure and NOT re-try the terminal one.
+    client2 = _FakeNoSeriesEventClient()
+    asyncio.run(pass1.resolve_series_and_category(client2, conn))
+    assert client2.event_calls == ["EVT-FAIL"]
+
+
+def test_discover_historical_series_accumulates_found_count_across_resumes(tmp_path):
+    """markets_found_in_window is written back on every checkpoint, so
+    resetting it per invocation made a resumed series report only its last
+    segment while pages_fetched kept accumulating."""
+    conn = db.connect(tmp_path / "t.db")
+    client = _FakeSeriesScanClient()
+    # One page per run: LONGRUN needs 3, so it resumes twice.
+    asyncio.run(pass1.discover_historical_series(client, conn, max_pages_per_series=1))
+    first = db.get_series_scan_state(conn, "LONGRUN")["markets_found_in_window"]
+    asyncio.run(pass1.discover_historical_series(client, conn, max_pages_per_series=1))
+    second = db.get_series_scan_state(conn, "LONGRUN")["markets_found_in_window"]
+    state = db.get_series_scan_state(conn, "LONGRUN")
+    assert second >= first
+    # Page 2 is the one carrying LR-mid, so by now exactly one in-window find.
+    assert second == 1
+    assert state["pages_fetched"] == 2
+
+
 def test_resolve_series_and_category_min_open_duration_filters_short_markets(tmp_path):
     """The 24h open-duration filter must scope resolution too, not just the
     panel/quote loop -- category is consumed only for in-scope markets, all

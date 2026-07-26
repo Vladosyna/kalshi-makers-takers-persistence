@@ -88,6 +88,13 @@ async def fetch_full_tape_for_market(
     progress = db.get_pass2_progress(conn, ticker)
     cursor = progress["cursor"] if progress else None
     source = progress["source"] if progress else None
+    # Progress indicator only, NOT the completeness contract's fetched count:
+    # it is a running sum of append()'s newly-written return value committed
+    # after the Parquet write, so a crash in that window leaves the trades on
+    # disk uncredited and the counter drifts low for good (the re-fetched page
+    # is correctly deduped to 0 new rows on resume). Spec S3's recorded-vs-
+    # fetched reconciliation uses TradeStore.trade_count_by_ticker(), which
+    # counts the tape itself and has no such failure mode.
     trade_count = progress["trade_count"] if progress else 0
     started_fresh = source is None
 

@@ -234,6 +234,13 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     _ensure_column(conn, "markets", "settlement_value_dollars", "REAL")
     _ensure_column(conn, "markets", "last_price_dollars", "REAL")
     _ensure_column(conn, "series_scan_state", "scan_window_end", "INTEGER")
+    # 1 once GET /events answered for this market's event and that event
+    # genuinely carries no series_ticker -- a terminal state, versus the
+    # request simply having failed, which must stay retryable. Without the
+    # distinction resolve_series_and_category re-issued the same doomed
+    # lookup every run forever, since its only filter was series_ticker IS
+    # NULL (fetch/pass1.py has the reasoning).
+    _ensure_column(conn, "markets", "series_resolution_terminal", "INTEGER DEFAULT 0")
     conn.execute(
         "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)", (SCHEMA_VERSION,)
     )

@@ -96,9 +96,14 @@ class TradeStore:
 
     def read_for_ticker(self, ticker: str, months: list[str] | None = None) -> pl.DataFrame:
         """All trades for one ticker. Scans the given months (or every
-        partition on disk if not given) -- fine for R1/R2 analysis reads;
-        Pass 2's own progress/count tracking lives in SQLite's
-        pass2_progress table, not derived by re-scanning Parquet."""
+        partition on disk if not given) -- fine for R1/R2 analysis reads.
+
+        Pass 2's RESUME state (cursor, endpoint family) lives in SQLite's
+        pass2_progress, since that is what a restart needs. Its trade_count
+        there is only a progress indicator and can drift low after a crash
+        between the Parquet write and the SQLite commit -- use
+        trade_count_by_ticker() for the completeness contract's fetched
+        counts, which reads the tape itself."""
         df = self.read_range(months if months is not None else self.months_on_disk())
         if df.is_empty():
             return df
@@ -130,3 +135,26 @@ class TradeStore:
         )
         result = duckdb.connect().execute(query, [str(self.base / "month=*" / "trades.parquet")]).pl()
         return dict(zip(result["ticker"].to_list(), result["dollar_volume"].to_list()))
+
+    def trade_count_by_ticker(self) -> dict[str, int]:
+        """Fills per ticker, counted from the tape itself -- the authoritative
+        side of spec S3's recorded-vs-fetched completeness contract.
+
+        pass2_progress.trade_count cannot serve that role on its own: it is a
+        running sum of append()'s newly-written-rows return value, committed to
+        SQLite AFTER the Parquet write. A crash in between leaves the trades
+        durably on disk while the committed counter still points at the
+        previous page; on resume the stale cursor re-fetches that page,
+        append()'s trade_id anti-join correctly drops the duplicates and
+        returns 0, and the counter is never credited for them. The tape stays
+        duplicate-free (that part is genuinely safe) but the counter drifts
+        LOW, which would read as an incomplete fetch that no amount of
+        re-running can fix. Deriving the count here removes that failure mode
+        from the contract entirely.
+
+        Same DuckDB-not-polars reasoning as dollar_volume_by_ticker above."""
+        if not self.months_on_disk():
+            return {}
+        query = "SELECT ticker, COUNT(*) AS n FROM read_parquet(?) GROUP BY ticker"
+        result = duckdb.connect().execute(query, [str(self.base / "month=*" / "trades.parquet")]).pl()
+        return dict(zip(result["ticker"].to_list(), result["n"].to_list()))
