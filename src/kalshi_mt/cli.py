@@ -158,6 +158,23 @@ def fetch_pass1(
                    "hourly-reset crypto/index sub-markets no downstream phase uses. Pass 0 to "
                    "disable and process every volume-qualifying market regardless of duration."
     ),
+    resolve_max_spread: float | None = typer.Option(
+        None, "--resolve-max-spread",
+        help="Narrow series/category resolution to markets whose closing quote already clears "
+             "this spread (e.g. 0.20). Measured 2026-07-26: the volume+24h-scoped resolve backlog "
+             "was 475,845 markets across 264,596 events (~9h of GET /events), while the subset "
+             "also clearing spread<=20c was 41,962 across 12,429 events (~26 min) -- same "
+             "analytical coverage, since category is only consumed for in-scope markets. Needs "
+             "quotes to exist already, so it is for a targeted catch-up run, not a fresh sweep.",
+    ),
+    max_concurrent_series: int = typer.Option(
+        20, "--max-concurrent-series",
+        help="Concurrent series in the historical scan. The default is unchanged; lower it for a "
+             "targeted catch-up on a handful of very large series, where all of them running at "
+             "once sustains a 429 storm that exhausts retries and drops the series entirely "
+             "(observed 2026-07-26: the last 15 series failed identically on two consecutive "
+             "passes until they were the only work left).",
+    ),
     panel_quote_window: str | None = typer.Option(
         None, "--panel-quote-window",
         help="Restrict ONLY the panel/quote fetch to one analysis window ('r1' or 'r2'); "
@@ -203,6 +220,8 @@ def fetch_pass1(
                 live_max_pages=live_max_pages, series_resolution_batch_size=resolve_batch_size,
                 min_volume_fp=min_volume_fp, min_open_duration_s=min_open_duration_s,
                 panel_quote_window=panel_quote_window,
+                resolve_max_spread=resolve_max_spread,
+                max_concurrent_series=max_concurrent_series,
             )
         finally:
             await client.aclose()

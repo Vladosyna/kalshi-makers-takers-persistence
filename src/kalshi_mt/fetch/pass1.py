@@ -429,6 +429,7 @@ async def resolve_series_and_category(
     client: KalshiClient, conn, batch_size: int | None = 500,
     min_volume_fp: float | None = None, min_open_duration_s: float | None = None,
     max_concurrent: int = 20, series_catalog: list[Any] | None = None,
+    max_spread: float | None = None,
 ) -> dict[str, int]:
     """`min_volume_fp` and `min_open_duration_s` restrict resolution to
     markets that could plausibly clear R1/R2's own $1k volume and >=24h open
@@ -462,12 +463,29 @@ async def resolve_series_and_category(
     category_by_series = {s.ticker: s.category for s in all_series}
 
     scope_sql, scope_params = _scope_predicate(min_volume_fp, min_open_duration_s)
-    # series_resolution_terminal excludes events already proven to carry no
-    # series -- see the terminal-vs-retryable split below.
+    # `max_spread` narrows resolution to markets whose closing quote ALREADY
+    # clears the spread filter, i.e. the ones that can really reach the
+    # analysis. Measured 2026-07-26: the volume+24h-scoped backlog was 475,845
+    # markets across 264,596 distinct events (~9h of GET /events at 8 req/s),
+    # while the subset that also clears spread<=20c was 41,962 markets across
+    # just 12,429 events (~26 min) -- a 21x reduction for the same analytical
+    # coverage, since category is only ever consumed for in-scope markets.
+    #
+    # OPT-IN, not the default: it makes resolution depend on quotes existing,
+    # and run_pass1 resolves BEFORE its panel/quote phase, so on a fresh
+    # universe a spread-scoped resolve would find nothing on the first
+    # invocation. Fine for a targeted catch-up run (where quotes are already
+    # collected), wrong as a pipeline default.
+    join_sql = ""
+    if max_spread is not None:
+        join_sql = " JOIN quotes q ON q.ticker = markets.ticker"
+        scope_sql += " AND q.spread IS NOT NULL AND q.spread <= ?"
+        scope_params = [*scope_params, max_spread]
     query = (
-        "SELECT ticker, event_ticker FROM markets "
-        "WHERE series_ticker IS NULL AND event_ticker IS NOT NULL "
-        "AND COALESCE(series_resolution_terminal, 0) = 0" + scope_sql
+        "SELECT markets.ticker AS ticker, markets.event_ticker AS event_ticker "
+        "FROM markets" + join_sql + " "
+        "WHERE markets.series_ticker IS NULL AND markets.event_ticker IS NOT NULL "
+        "AND COALESCE(markets.series_resolution_terminal, 0) = 0" + scope_sql
     )
     rows = conn.execute(query, scope_params).fetchall()
     if batch_size is not None:
@@ -513,10 +531,11 @@ async def resolve_series_and_category(
         )
         resolved += 1
     conn.commit()
+    # Same join/scope as the selection above -- scope_sql may reference q.spread.
     remaining_query = (
-        "SELECT COUNT(*) FROM markets "
-        "WHERE series_ticker IS NULL AND event_ticker IS NOT NULL "
-        "AND COALESCE(series_resolution_terminal, 0) = 0" + scope_sql
+        "SELECT COUNT(*) FROM markets" + join_sql + " "
+        "WHERE markets.series_ticker IS NULL AND markets.event_ticker IS NOT NULL "
+        "AND COALESCE(markets.series_resolution_terminal, 0) = 0" + scope_sql
     )
     remaining = conn.execute(remaining_query, scope_params).fetchone()[0]
     return {
@@ -700,6 +719,8 @@ async def run_pass1(
     min_open_duration_s: float | None = 86_400.0,
     panel_quote_window: str | None = None,
     panel_quote_concurrency: int = 20,
+    resolve_max_spread: float | None = None,
+    max_concurrent_series: int = 20,
 ) -> dict[str, Any]:
     """Discovery (live sweep + historical series scan) -> series/category
     resolution -> price-panel + closing-quote fetch for every discovered
@@ -758,11 +779,12 @@ async def run_pass1(
     series_catalog = await client.list_series(limit=100_000)
     hist_stats = await discover_historical_series(
         client, conn, max_series_this_run=max_series_this_run, series_catalog=series_catalog,
+        max_concurrent_series=max_concurrent_series,
     )
     resolve_stats = await resolve_series_and_category(
         client, conn, batch_size=series_resolution_batch_size,
         min_volume_fp=min_volume_fp, min_open_duration_s=min_open_duration_s,
-        series_catalog=series_catalog,
+        series_catalog=series_catalog, max_spread=resolve_max_spread,
     )
 
     scope_sql, extra_params = _scope_predicate(min_volume_fp, min_open_duration_s)

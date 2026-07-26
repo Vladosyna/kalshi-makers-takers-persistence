@@ -931,3 +931,44 @@ def test_run_pass1_min_open_duration_none_processes_short_markets(tmp_path):
 
     assert "SHORT" in client.trade_fetch_calls
     assert stats["markets_processed"] == 1
+
+
+def test_resolve_max_spread_narrows_to_markets_already_clearing_the_spread_filter(tmp_path):
+    """Measured 2026-07-26: the volume+24h-scoped resolve backlog was 475,845
+    markets / 264,596 events (~9h of GET /events), while the subset also
+    clearing spread<=20c was 41,962 / 12,429 (~26 min) -- same analytical
+    coverage, since category is only consumed for in-scope markets."""
+    conn = db.connect(tmp_path / "t.db")
+    common = {"event_ticker": "EVT-1", "volume_fp": 5000.0,
+              "open_time_epoch": 0, "close_time_epoch": 100_000}
+    db.upsert_market(conn, {"ticker": "TIGHT", **common})
+    db.upsert_market(conn, {"ticker": "WIDE", **common})
+    db.upsert_market(conn, {"ticker": "NOQUOTE", **common})
+    for t, spread in (("TIGHT", 0.05), ("WIDE", 0.40)):
+        db.upsert_quote(conn, {
+            "ticker": t, "end_period_ts": 100_000, "yes_bid_close": 0.4,
+            "yes_ask_close": 0.4 + spread, "spread": spread, "source": "live",
+        })
+    conn.commit()
+
+    client = _FakeResolveClient()
+    stats = asyncio.run(pass1.resolve_series_and_category(client, conn, max_spread=0.20))
+    assert stats["resolved_this_run"] == 1
+    assert stats["remaining"] == 0
+    got = {r[0]: r[1] for r in conn.execute("SELECT ticker, category FROM markets").fetchall()}
+    assert got["TIGHT"] == "Climate and Weather"
+    assert got["WIDE"] is None       # quote exists but spread too wide
+    assert got["NOQUOTE"] is None    # no quote yet -- excluded by the join
+
+
+def test_resolve_without_max_spread_still_covers_unquoted_markets(tmp_path):
+    """The default must stay unscoped: run_pass1 resolves BEFORE its
+    panel/quote phase, so a spread-scoped default would find nothing on a
+    fresh universe."""
+    conn = db.connect(tmp_path / "t.db")
+    db.upsert_market(conn, {"ticker": "NOQUOTE", "event_ticker": "EVT-1", "volume_fp": 5000.0,
+                            "open_time_epoch": 0, "close_time_epoch": 100_000})
+    conn.commit()
+    client = _FakeResolveClient()
+    stats = asyncio.run(pass1.resolve_series_and_category(client, conn))
+    assert stats["resolved_this_run"] == 1
