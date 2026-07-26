@@ -72,16 +72,39 @@ DIVERGENCE_NOTES = """Known R1 construction divergences beyond the volume readin
    are merely not-yet-fetched, so the shortfall is not an artifact of
    incomplete collection. BDW did not lose these.
 
-2. Panel depth: 2.51 prices/contract vs BDW's implied 3.39. NOT a sample-mix
-   effect -- the 14,891 markets that clear volume but run under 24h would pull
-   contracts up toward BDW's 46,282 while pushing depth DOWN, not up. Depth by
-   duration: 24-48h markets are 59% of contracts at 1.62 prices each, rising
-   to 4.90 for 30d+. The leading candidate is this repo's own pinned rule "on
-   a no-trade lookback day, SKIP (no backfill)": carrying the last known price
-   forward instead would mechanically add rows per contract, and for a 24-48h
-   market whose ceiling is ~2-3 ET days it would lift 1.62 toward that
-   ceiling, putting the sample near 3.2-3.5 -- i.e. BDW's 3.39. Testable both
-   ways; not silently changed.
+2. Skip-vs-backfill on no-trade lookback days -- MEASURED 2026-07-26, and it
+   turns out to drive BOTH the depth gap and a fifth of the contract gap.
+
+   This repo's pinned rule is "on a no-trade lookback day, SKIP (no
+   backfill)", matching a last-trade-BEFORE-time construction. Projecting the
+   alternative from data already on disk (day-0 anchors from price_panel,
+   first-trade times from Pass 2's tape, production's own ET helpers -- no
+   refetch):
+
+       our skip rule        64,614 prices   2.50 per contract
+       backfill (projected) 90,277 prices   3.50 per contract
+       BDW                 156,986 prices   3.39 per contract
+
+   3.50 against their 3.39 is a 3.2% match, versus 26% low under skip. And it
+   is not only depth: the same rule applied at day 0 drops whole contracts.
+   Of 32,728 in-scope contracts, 6,925 (21.2%) have NO panel row at all, and
+   exactly 0 have rows without a day-0 row -- fetch_price_panel is
+   all-or-nothing, so a contract whose last trade fell outside its closing ET
+   calendar day contributes nothing. Under backfill those 6,925 would carry a
+   price forward and be retained, taking contracts from 25,803 to 32,728.
+
+   So BDW very likely carried prices forward. Combined projection: ~32,728
+   contracts and ~114,500 prices, i.e. -29%/-27% against their integers
+   rather than -44%/-59%. Deliberately NOT changed here -- it is a pinned
+   construction choice, and the volume filter's own re-pin showed why these
+   are decided on measurement and reported as branches, not switched quietly.
+
+3. Residual after both of the above: contracts ~32.7k vs 46,282. Our funnel
+   loses 5,152 to the 24h filter and 6,555 to the spread filter (3,298
+   genuinely wide, 3,257 structurally uncomputable per item 1), off 44,946 at
+   the volume stage. For BDW to report 46,282 AFTER those same filters, their
+   spread and duration filters must have bitten far less than ours -- which
+   for the spread half is exactly the bid/ask-history asymmetry of item 1.
 """
 
 
