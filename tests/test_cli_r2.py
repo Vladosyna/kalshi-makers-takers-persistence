@@ -27,16 +27,22 @@ def _seed_r1_market(conn, ticker, category, close_epoch, price, result):
 
 
 def _seed_r2_market(conn, ticker, category, close_epoch, price, result, *, trade_store, notional=5000.0):
-    """Passes apply_r1_filters(window='r2'): TRUE dollar volume>=1000
-    (2026-07-21 audit -- read from Pass 2's trade tape via
-    dollar_volume_by_ticker, not the old volume_fp contract-count proxy),
-    spread<=0.2, open>=24h, and day0_price/result must agree (no
-    settlement mismatch). pass2_progress must be 'done' -- otherwise the
-    market fails 'dollar_volume_not_yet_fetched' rather than being
-    evaluated on its actual notional."""
+    """Passes apply_r1_filters(window='r2') under BOTH volume readings:
+    spread<=0.2, open>=24h, day0_price/result agree (no settlement mismatch),
+    and volume clears 1000 whether measured in contracts (the pinned PRIMARY
+    reading -- r1/filters.py's VOLUME_READING_PIN) or in dollar notional from
+    Pass 2's tape (the sensitivity branch).
+
+    volume_fp is deliberately set to the SAME contract count the tape carries,
+    so the fixture is physically coherent rather than passing one reading by
+    accident: Kalshi's volume_fp IS the number of contracts traded, and the
+    tape below writes exactly that many. pass2_progress must be 'done' or the
+    dollar branch reports 'dollar_volume_not_yet_fetched' instead of
+    evaluating the real notional."""
+    contract_count = notional / max(price, 0.01)
     db.upsert_market(conn, {
         "ticker": ticker, "event_ticker": f"{ticker}-EVT", "category": category,
-        "result": result,
+        "result": result, "volume_fp": contract_count,
         "open_time_epoch": close_epoch - 2 * 86400, "close_time_epoch": close_epoch,
         "in_r2_window": 1,
     })
@@ -53,7 +59,7 @@ def _seed_r2_market(conn, ticker, category, close_epoch, price, result, *, trade
     })
     trade_store.append([{
         "trade_id": f"{ticker}-tape-0", "ticker": ticker,
-        "count_fp": notional / max(price, 0.01), "yes_price_dollars": price,
+        "count_fp": contract_count, "yes_price_dollars": price,
         "no_price_dollars": round(1 - price, 4), "taker_outcome_side": "yes",
         "taker_book_side": "yes", "taker_side": "yes",
         "created_time": "2025-06-01T00:00:00Z", "is_block_trade": False, "source": "historical",

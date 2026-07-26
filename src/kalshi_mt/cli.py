@@ -289,7 +289,12 @@ def fetch_pass2(
 def build() -> None:
     """R1 filters, panel construction, count-reconciliation gate, and the
     frozen calendar-2024 category-mix artifact Phase 7 depends on."""
-    from kalshi_mt.r1.filters import apply_and_log
+    from kalshi_mt.r1.filters import (
+        DIVERGENCE_NOTES,
+        DOLLAR_BRANCH_LOG_WINDOW,
+        VOLUME_READING_PIN,
+        apply_and_log,
+    )
     from kalshi_mt.r1.panel import basis_counts, build_doubled_panel, build_yes_only_panel
     from kalshi_mt.r1.reconcile import (
         compute_calendar_2024_mix,
@@ -305,12 +310,14 @@ def build() -> None:
     conn = db.connect(config["storage"]["db_path"])
     try:
         trade_store = TradeStore(config["storage"]["parquet_dir"])
-        # The TRUE $1k dollar-notional gate (2026-07-21 audit -- volume_fp
-        # is a contract count, not dollars); computed from Pass 2's full
-        # trade tape, not the cheap volume_fp proxy Pass 1/2 use only to
-        # SCOPE which markets get an expensive fetch in the first place.
-        dollar_volume_by_ticker = trade_store.dollar_volume_by_ticker()
-        filter_summary = apply_and_log(conn, window="r1", dollar_volume_by_ticker=dollar_volume_by_ticker)
+
+        # PRIMARY: the contract reading of BDW's volume filter
+        # (dollar_volume_by_ticker=None thresholds Kalshi's own volume_fp,
+        # which is a contract count). Pinned 2026-07-26 -- see
+        # r1/filters.py's VOLUME_READING_PIN for the measurement that decided
+        # it: at this stage our independently collected universe lands within
+        # 0.1% of BDW's 12,403 events and 2.9% of their 46,282 contracts.
+        filter_summary = apply_and_log(conn, window="r1", dollar_volume_by_ticker=None)
         in_scope = {
             r[0] for r in conn.execute(
                 "SELECT ticker FROM markets m WHERE m.in_r1_window = 1 "
@@ -323,15 +330,51 @@ def build() -> None:
         reconciliation = reconcile_counts(conn, yes_only, doubled)
         gap_breakdown = coverage_gap_breakdown(conn, window="r1")
 
+        # SENSITIVITY: the literal dollar-notional reading, computed from Pass
+        # 2's real tape. Logged under its own window label so it stays fully
+        # queryable without shrinking the primary in-scope set above (which is
+        # an exact match on window='r1'). Reported, never silently dropped:
+        # under it the sample roughly halves, and a sample rule that
+        # differentially removes longshots is itself a result in a paper about
+        # favorite-longshot bias.
+        dollar_volume_by_ticker = trade_store.dollar_volume_by_ticker()
+        dollar_summary = apply_and_log(
+            conn, window="r1", dollar_volume_by_ticker=dollar_volume_by_ticker,
+            log_window=DOLLAR_BRANCH_LOG_WINDOW,
+        )
+        dollar_in_scope = {
+            r[0] for r in conn.execute(
+                "SELECT ticker FROM markets m WHERE m.in_r1_window = 1 "
+                "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = ?)",
+                (DOLLAR_BRANCH_LOG_WINDOW,),
+            ).fetchall()
+        }
+        dollar_yes_only = build_yes_only_panel(conn, dollar_in_scope)
+        dollar_doubled = build_doubled_panel(dollar_yes_only)
+        dollar_reconciliation = reconcile_counts(conn, dollar_yes_only, dollar_doubled)
+
+        # Frozen 2024 mix comes from the PRIMARY branch only -- R2's
+        # decomposition weights must trace to one pinned construction.
         mix = compute_calendar_2024_mix(yes_only)
         mix_path = write_frozen_2024_mix(mix, PROJECT_ROOT / "data" / "frozen_2024_mix.json")
 
         result = {
+            "volume_reading": {
+                "primary": "contract_count",
+                "sensitivity": "dollar_notional",
+                "pin": VOLUME_READING_PIN,
+                "divergence_notes": DIVERGENCE_NOTES,
+            },
             "filters": filter_summary,
             "panel": basis_counts(yes_only, doubled),
             "reconciliation": reconciliation["deltas"],
             "coverage_gap_breakdown": gap_breakdown,
             "frozen_2024_mix": {"path": str(mix_path), "categories": len(mix)},
+            "sensitivity_dollar_notional": {
+                "filters": dollar_summary,
+                "panel": basis_counts(dollar_yes_only, dollar_doubled),
+                "reconciliation": dollar_reconciliation["deltas"],
+            },
         }
     finally:
         conn.close()
@@ -457,10 +500,12 @@ def r2() -> None:
         # apply_and_log is idempotent (re-running just re-derives the same
         # exclusions), so calling it here rather than requiring a separate
         # `kmt build --window r2` step keeps `kmt r2` runnable on its own.
-        trade_store = TradeStore(config["storage"]["parquet_dir"])
-        dollar_volume_by_ticker = trade_store.dollar_volume_by_ticker()
+        # Contract reading, matching R1's pinned primary (r1/filters.py's
+        # VOLUME_READING_PIN) -- analysis_plan.md S2 defines R2 as an extension
+        # of R1's construction with no separate filter definition, so the two
+        # windows must not sit on different readings of the volume filter.
         r2_filter_summary = apply_and_log(
-            conn, window="r2", dollar_volume_by_ticker=dollar_volume_by_ticker
+            conn, window="r2", dollar_volume_by_ticker=None
         )
         r1_scope = {
             r[0] for r in conn.execute(
@@ -620,8 +665,8 @@ def _compute_escalation(config: dict) -> dict:
     trade_store = TradeStore(config["storage"]["parquet_dir"])
     conn = db.connect(config["storage"]["db_path"])
     try:
-        dollar_volume_by_ticker = trade_store.dollar_volume_by_ticker()
-        apply_and_log(conn, window="r2", dollar_volume_by_ticker=dollar_volume_by_ticker)
+        # Contract reading -- same pinned primary as R1/`kmt r2`.
+        apply_and_log(conn, window="r2", dollar_volume_by_ticker=None)
         r2_scope = {
             r[0] for r in conn.execute(
                 "SELECT ticker FROM markets m WHERE m.in_r2_window = 1 "

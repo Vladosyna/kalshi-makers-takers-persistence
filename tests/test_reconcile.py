@@ -88,7 +88,7 @@ def test_reconcile_counts_empty_panel(tmp_path):
 
 def test_coverage_gap_breakdown_splits_structural_vs_operational_vs_other(tmp_path):
     conn = db.connect(tmp_path / "t.db")
-    db.log_universe_exclusions(conn, "r1", [
+    db.replace_universe_exclusions(conn, "r1", [
         ("A", "spread_filter_not_computable"),
         ("B", "spread_filter_not_computable"),
         ("C", "spread_filter_not_yet_fetched"),
@@ -117,8 +117,8 @@ def test_coverage_gap_breakdown_empty_log(tmp_path):
 
 def test_coverage_gap_breakdown_respects_window(tmp_path):
     conn = db.connect(tmp_path / "t.db")
-    db.log_universe_exclusions(conn, "r1", [("A", "spread_filter_not_computable")])
-    db.log_universe_exclusions(conn, "r2", [("B", "spread_filter_not_computable")])
+    db.replace_universe_exclusions(conn, "r1", [("A", "spread_filter_not_computable")])
+    db.replace_universe_exclusions(conn, "r2", [("B", "spread_filter_not_computable")])
     conn.commit()
     r1_result = coverage_gap_breakdown(conn, window="r1")
     assert r1_result["structural_spread_filter_not_computable"] == 1

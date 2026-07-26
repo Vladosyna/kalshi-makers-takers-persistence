@@ -21,9 +21,68 @@ from typing import Any
 
 from kalshi_mt.store import db
 
+# 1000 in whichever unit the active volume reading uses -- see
+# VOLUME_READING_PIN. Deliberately one constant: the two readings differ in
+# UNITS, not in the threshold BDW wrote down.
 MIN_VOLUME_FP = 1000.0
 MAX_SPREAD = 0.20
 MIN_OPEN_SECONDS = 24 * 3600
+
+# universe_log label for the dollar-notional sensitivity branch. Must NOT be
+# 'r1': in-scope is computed as "NOT IN universe_log WHERE window = 'r1'", so
+# logging a second branch under that label would silently shrink the primary
+# analysis universe by the other reading's exclusions.
+DOLLAR_BRANCH_LOG_WINDOW = "r1_dollar_volume"
+
+VOLUME_READING_PIN = """Volume filter, pinned 2026-07-26 after the first real gate run.
+
+BDW write "total traded volume at closure >= $1,000", which reads as dollar
+notional. Kalshi's `volume` field, however, is denominated in CONTRACTS and the
+API exposes no notional field; because a contract settles at $1 the two are
+nearly indistinguishable in prose, so "volume >= 1000" turns into "$1,000"
+easily. The choice is not settled by guessing their intent -- psi is only
+comparable on a comparable sample, and a construction that systematically
+drops cheap strikes yields a different psi BY CONSTRUCTION, which would make
+R1 say nothing about their result.
+
+Measured, on our own independently collected R1 universe, at the
+volume>=1000-CONTRACTS stage (before the 24h and spread filters):
+
+    contracts  44,946  vs BDW 46,282   (-2.9%)
+    events     12,416  vs BDW 12,403   (+0.1%)
+
+A 0.1% event match on independently collected data is not coincidence, so the
+CONTRACT reading is PRIMARY. The dollar-notional reading is retained as a
+reported sensitivity branch, not discarded: it is the literal text, and under
+it the sample roughly halves (13,632 contracts / 39,818 prices), which is
+itself a finding -- a sample rule in a favorite-longshot-bias paper that
+differentially removes longshots.
+
+What the switch does NOT fix, and must not be presented as fixing: prices per
+contract stays near 2.5 against BDW's implied 3.39, and events after our 24h
+and spread filters stay near 10k against their 12,403. See DIVERGENCE_NOTES.
+"""
+
+DIVERGENCE_NOTES = """Known R1 construction divergences beyond the volume reading.
+
+1. Structural spread-filter loss (8.2%). Of the 39,794 markets clearing
+   volume+24h, 3,257 (8.2%) have a quote row whose spread is NULL -- Kalshi
+   genuinely serves no bid/ask history for them (Step Zero Check 5's PARTIAL
+   finding), so this cannot shrink by fetching more. Only 11 markets (0.0%)
+   are merely not-yet-fetched, so the shortfall is not an artifact of
+   incomplete collection. BDW did not lose these.
+
+2. Panel depth: 2.51 prices/contract vs BDW's implied 3.39. NOT a sample-mix
+   effect -- the 14,891 markets that clear volume but run under 24h would pull
+   contracts up toward BDW's 46,282 while pushing depth DOWN, not up. Depth by
+   duration: 24-48h markets are 59% of contracts at 1.62 prices each, rising
+   to 4.90 for 30d+. The leading candidate is this repo's own pinned rule "on
+   a no-trade lookback day, SKIP (no backfill)": carrying the last known price
+   forward instead would mechanically add rows per contract, and for a 24-48h
+   market whose ceiling is ~2-3 ET days it would lift 1.62 toward that
+   ceiling, putting the sample near 3.2-3.5 -- i.e. BDW's 3.39. Testable both
+   ways; not silently changed.
+"""
 
 
 @dataclass
@@ -70,20 +129,29 @@ def apply_r1_filters(
     universe_log/reconcile.py's coverage_gap_breakdown instead of an
     unattributed shortfall against BDW's 156,986.
 
-    `dollar_volume_by_ticker` (store/parquet.py's TradeStore.
-    dollar_volume_by_ticker()) is the TRUE $1k volume gate (spec S1: dollar
-    notional), replacing the earlier proxy that thresholded Kalshi's own
-    `volume_fp` -- a CONTRACT COUNT, not dollars (2026-07-21 audit: since
-    every trade price is <$1, count>=1000 admits real notional under $1000,
-    concentrated in exactly the cheap tail bins the FLB headline depends
-    on). A market Pass 2 hasn't finished (no 'done' pass2_progress row)
-    fails 'dollar_volume_not_yet_fetched' (operational, mirrors the
-    spread_filter split) rather than being silently treated as below
-    threshold. Passing None (the default) falls back to the old
-    contract-count proxy against `volume_fp` -- an approximation, correct
-    only for a lightweight/preview call made before Pass 2 has run; the
-    production R1/R2 gate (cli.py's `build` command) always threads the
-    real dict through."""
+    `dollar_volume_by_ticker` selects WHICH READING of BDW's volume filter to
+    apply, and the two are not ranked as approximation-vs-truth (they were
+    until 2026-07-26; VOLUME_READING_PIN above has the measurement that
+    re-ranked them):
+
+      None  -> CONTRACT reading, thresholding Kalshi's own `volume_fp`. This
+               is the PINNED PRIMARY: at this stage our independently
+               collected R1 universe lands within 0.1% of BDW's 12,403 events
+               and 2.9% of their 46,282 contracts.
+      dict  -> DOLLAR-NOTIONAL reading (store/parquet.py's
+               TradeStore.dollar_volume_by_ticker(), summed from Pass 2's real
+               tape). The literal text of the paper, kept as a reported
+               SENSITIVITY branch. Since every trade price is <$1,
+               count>=1000 admits notional under $1000, so this reading
+               removes cheap strikes -- roughly halving the sample, and
+               concentrated in exactly the tail bins the FLB headline rests
+               on. A market Pass 2 hasn't finished (no 'done' pass2_progress
+               row) fails 'dollar_volume_not_yet_fetched' (operational,
+               mirroring the spread_filter split) rather than being silently
+               treated as below threshold.
+
+    cli.py's `build` runs BOTH and reports both; only the primary writes the
+    universe_log label the analysis universe is derived from."""
     window_column = {"r1": "in_r1_window", "r2": "in_r2_window"}[window]
     rows = conn.execute(
         f"""
@@ -146,15 +214,23 @@ def summarize(results: list[FilterResult]) -> dict[str, Any]:
 
 def apply_and_log(
     conn, window: str = "r1", dollar_volume_by_ticker: dict[str, float] | None = None,
+    log_window: str | None = None,
 ) -> dict[str, Any]:
     """Runs the filters and persists every exclusion to universe_log
     (spec-wide defense against selection-bias claims -- see db.py's own
     universe_log docstring). See apply_r1_filters for
-    `dollar_volume_by_ticker`."""
+    `dollar_volume_by_ticker`.
+
+    `log_window` decouples the universe_log LABEL from the window column
+    `window` selects, so a sensitivity branch can be logged without polluting
+    the primary universe: in-scope is computed as "NOT IN universe_log WHERE
+    window = 'r1'" (an exact match), so logging the dollar-notional branch
+    under e.g. 'r1_dollar_volume' keeps both queryable while leaving the
+    primary analysis set untouched. Defaults to `window`, i.e. the primary."""
     results = apply_r1_filters(conn, window=window, dollar_volume_by_ticker=dollar_volume_by_ticker)
     exclusions = [
         (r.ticker, code) for r in results if not r.passed for code in r.reason_codes
     ]
-    db.log_universe_exclusions(conn, window, exclusions)
+    db.replace_universe_exclusions(conn, log_window or window, exclusions)
     conn.commit()
     return summarize(results)

@@ -1,0 +1,19 @@
+{
+  "computed_ts": "2026-07-26T20:37:12+00:00",
+  "basis": "yes_only_contract_count",
+  "source_window": "calendar_2024",
+  "weights": {
+    "Financials": 0.3365768463073852,
+    "Climate and Weather": 0.4749251497005988,
+    "Science and Technology": 0.006112774451097805,
+    "Companies": 0.00062375249500998,
+    "Elections": 0.002619760479041916,
+    "Health": 0.000124750499001996,
+    "Entertainment": 0.07659680638722555,
+    "Politics": 0.03455588822355289,
+    "Crypto": 0.010104790419161677,
+    "Commodities": 0.00436626746506986,
+    "Economics": 0.053268463073852294,
+    "Sports": 0.000124750499001996
+  }
+}

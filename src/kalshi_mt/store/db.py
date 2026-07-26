@@ -458,10 +458,25 @@ def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
     return None if row is None else row["value"]
 
 
-def log_universe_exclusions(
+def replace_universe_exclusions(
     conn: sqlite3.Connection, window: str, exclusions: list[tuple[str, str]],
 ) -> int:
-    """Batch-append (ticker, reason_code) exclusion rows. Returns rows written."""
+    """Replace this window's exclusion set, rather than appending to it.
+
+    In-scope is derived as "NOT IN universe_log WHERE window = ?", so appending
+    makes the universe a running INTERSECTION of every construction ever run
+    against this database -- stale rows silently and permanently narrow it.
+    Confirmed live 2026-07-26: after the volume filter was re-pinned from
+    dollar notional to contract count, the primary branch's counts came back
+    byte-identical to the sensitivity branch's, because the previous run's
+    dollar-reading exclusions were still sitting under window='r1' and the two
+    readings disagree on roughly half the sample. Deleting the window's rows
+    first is what makes re-running actually idempotent (as the callers always
+    assumed it was) and what makes a re-pin take effect.
+
+    Scoped strictly to `window`, so the primary and sensitivity branches --
+    which use different labels on purpose -- never disturb each other."""
+    conn.execute("DELETE FROM universe_log WHERE window = ?", (window,))
     if not exclusions:
         return 0
     now = now_utc_iso()

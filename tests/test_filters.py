@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from kalshi_mt.r1.filters import MIN_OPEN_SECONDS, apply_and_log, apply_r1_filters, summarize
+from kalshi_mt.r1.filters import (
+    DOLLAR_BRANCH_LOG_WINDOW,
+    MIN_OPEN_SECONDS,
+    apply_and_log,
+    apply_r1_filters,
+    summarize,
+)
 from kalshi_mt.store import db
 
 
@@ -126,8 +132,11 @@ def test_no_price_panel_row_does_not_trigger_mismatch(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# dollar_volume_by_ticker mode -- the TRUE $1k notional gate (2026-07-21
-# audit), replacing the contract-count volume_fp proxy when threaded in.
+# dollar_volume_by_ticker mode -- the $1k DOLLAR-NOTIONAL reading of BDW's
+# volume filter. Since 2026-07-26 this is the reported SENSITIVITY branch, not
+# the primary: the contract reading reproduces BDW's own event/contract
+# integers to within 0.1%/2.9% (r1/filters.py's VOLUME_READING_PIN). Both
+# readings are exercised; neither is "the approximation".
 # ---------------------------------------------------------------------------
 
 def test_dollar_volume_mode_passes_market_clearing_true_notional(tmp_path):
@@ -171,9 +180,9 @@ def test_dollar_volume_mode_pass2_not_done_fails_as_not_yet_fetched(tmp_path):
 
 
 def test_dollar_volume_mode_none_falls_back_to_contract_count_proxy(tmp_path):
-    """dollar_volume_by_ticker=None (the default) must behave exactly like
-    the pre-2026-07-21 contract-count proxy -- a lightweight/preview mode
-    for callers without Pass 2 data, not the production R1/R2 gate."""
+    """dollar_volume_by_ticker=None thresholds Kalshi's own volume_fp, i.e.
+    the CONTRACT reading -- the pinned PRIMARY since 2026-07-26, and also what
+    callers without Pass 2 data get."""
     conn = db.connect(tmp_path / "t.db")
     _seed(conn, "LOW-VOL", volume_fp=500.0)
     r = apply_r1_filters(conn, dollar_volume_by_ticker=None)[0]
@@ -218,3 +227,100 @@ def test_apply_and_log_multiple_reasons_write_multiple_rows(tmp_path):
     apply_and_log(conn)
     rows = conn.execute("SELECT reason_code FROM universe_log WHERE ticker='BAD'").fetchall()
     assert {r[0] for r in rows} == {"volume_below_1000", "spread_above_20c"}
+
+
+def test_log_window_keeps_the_sensitivity_branch_out_of_the_primary_universe(tmp_path):
+    """The dual-branch design's load-bearing invariant. In-scope is computed as
+    "NOT IN universe_log WHERE window = 'r1'", so logging the dollar-notional
+    sensitivity branch under that same label would silently shrink the PRIMARY
+    analysis universe by the other reading's exclusions -- and the two readings
+    disagree on roughly half the sample, so that would be a large, invisible
+    error rather than a small one."""
+    conn = db.connect(tmp_path / "t.db")
+    # 2000 contracts at $0.10 = $200 notional: passes the CONTRACT reading,
+    # fails the dollar one. Exactly the population the two readings split on.
+    _seed(conn, "CHEAP", volume_fp=2000.0, day0_price=0.10, result="no")
+    # The dollar branch only evaluates real notional once Pass 2 is 'done';
+    # without this it correctly reports dollar_volume_not_yet_fetched instead,
+    # which would test the operational path rather than the readings' split.
+    db.upsert_pass2_progress(conn, {
+        "ticker": "CHEAP", "status": "done", "cursor": None,
+        "source": "historical", "trade_count": 2000,
+    })
+    conn.commit()
+
+    primary = apply_and_log(conn, window="r1", dollar_volume_by_ticker=None)
+    assert primary["passed"] == 1
+
+    sensitivity = apply_and_log(
+        conn, window="r1", dollar_volume_by_ticker={"CHEAP": 200.0},
+        log_window=DOLLAR_BRANCH_LOG_WINDOW,
+    )
+    assert sensitivity["passed"] == 0  # $200 < $1000
+
+    # The primary universe must be untouched by the sensitivity run.
+    in_scope = {
+        r[0] for r in conn.execute(
+            "SELECT ticker FROM markets WHERE in_r1_window = 1 "
+            "AND ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r1')"
+        ).fetchall()
+    }
+    assert in_scope == {"CHEAP"}
+
+    # ...while the sensitivity branch's own exclusions stay queryable.
+    dollar_reasons = {
+        r[0] for r in conn.execute(
+            "SELECT reason_code FROM universe_log WHERE window = ?",
+            (DOLLAR_BRANCH_LOG_WINDOW,),
+        ).fetchall()
+    }
+    assert "volume_below_1000" in dollar_reasons
+
+
+def test_dollar_branch_log_window_is_not_the_primary_label(tmp_path):
+    """Guards the constant itself -- if it ever became 'r1' the isolation above
+    would silently stop holding."""
+    assert DOLLAR_BRANCH_LOG_WINDOW != "r1"
+
+
+def test_apply_and_log_replaces_rather_than_appends_so_a_repin_takes_effect(tmp_path):
+    """In-scope is "NOT IN universe_log WHERE window = ?", so appending makes
+    the universe a running INTERSECTION of every construction ever run against
+    the database. Confirmed live 2026-07-26: after re-pinning the volume filter
+    from dollar notional to contract count, the primary branch's counts came
+    back byte-identical to the sensitivity branch's, because the earlier run's
+    dollar exclusions were still sitting under window='r1'."""
+    conn = db.connect(tmp_path / "t.db")
+    _seed(conn, "CHEAP", volume_fp=2000.0, day0_price=0.10, result="no")
+    db.upsert_pass2_progress(conn, {
+        "ticker": "CHEAP", "status": "done", "cursor": None,
+        "source": "historical", "trade_count": 2000,
+    })
+    conn.commit()
+
+    # First run under the DOLLAR reading excludes it ($200 < $1000)...
+    apply_and_log(conn, window="r1", dollar_volume_by_ticker={"CHEAP": 200.0})
+    assert conn.execute(
+        "SELECT COUNT(*) FROM universe_log WHERE window='r1' AND ticker='CHEAP'"
+    ).fetchone()[0] > 0
+
+    # ...and re-running under the CONTRACT reading must clear it, not stack.
+    summary = apply_and_log(conn, window="r1", dollar_volume_by_ticker=None)
+    assert summary["passed"] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM universe_log WHERE window='r1'"
+    ).fetchone()[0] == 0
+
+
+def test_replace_universe_exclusions_is_scoped_to_its_own_window(tmp_path):
+    """Replacing one window must not disturb another -- the primary and
+    sensitivity branches share this table under different labels."""
+    conn = db.connect(tmp_path / "t.db")
+    db.replace_universe_exclusions(conn, "r1", [("A", "volume_below_1000")])
+    db.replace_universe_exclusions(conn, "r2", [("B", "spread_above_20c")])
+    db.replace_universe_exclusions(conn, "r1", [("C", "open_below_24h")])
+    conn.commit()
+    rows = {
+        (r[0], r[1]) for r in conn.execute("SELECT window, ticker FROM universe_log").fetchall()
+    }
+    assert rows == {("r1", "C"), ("r2", "B")}
