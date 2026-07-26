@@ -361,6 +361,10 @@ def build_polymarket_panel(
             "lookback_day": 0, "category": category_map.get(raw_category) if raw_category else None,
             "close_time_epoch": int(row["_resolved_epoch"]), "side": "yes",
             "y": outcome, "p": price, "source": "polymarket_archive",
+            # PANEL_SCHEMA carries the fill size for Kalshi's fee model; the
+            # control venue has no fee computation here, and the archive is
+            # market-level rather than fill-level, so there is nothing to put.
+            "count_fp": None,
         })
 
     if not records:

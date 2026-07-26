@@ -92,17 +92,30 @@ def win_rate_by_band(doubled: pl.DataFrame) -> dict[str, dict[str, Any]]:
 
 
 def returns_by_band(yes_only: pl.DataFrame, fee_schedule: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Fig 5's returns-by-10c-band: buy at the closing-day entry price
-    (lookback_day=0), hold to resolution. Gross (f=0) and net-of-taker-fee
-    (BDW's own "takers only" fee model in their window), per
-    docs/analysis_plan.md S3.1: r = (payout - P - f) / P. A market whose
-    close_time predates the fee schedule's earliest entry (data/fees.yaml's
-    documented gap) contributes to the gross figure but is excluded from
-    net -- not silently zero-feed."""
-    day0 = yes_only.filter(pl.col("lookback_day") == 0)
-    if day0.is_empty():
+    """Fig 5's returns-by-10c-band: buy at EVERY observed panel price, hold to
+    resolution. Gross (f=0) and net-of-taker-fee (BDW's own "takers only" fee
+    model in their window), per docs/analysis_plan.md S3.1:
+    r = (payout - P - f) / P. A market whose close_time predates the fee
+    schedule's earliest entry (data/fees.yaml's documented gap) contributes to
+    the gross figure but is excluded from net -- not silently zero-feed.
+
+    Every panel observation is an entry price, NOT just the closing day's
+    (lookback_day == 0), which is what this computed until 2026-07-26. BDW's
+    own headline settles it -- they report an average pre-fee return of about
+    -20%, and measured on our universe:
+
+        all panel observations   -0.250   (n = 121,803)
+        closing day only         -0.701   (n =  32,728)
+
+    Restricting to the closing day is not a small variation: a contract still
+    priced at 1-10c on its final day has almost no chance left, so that band
+    alone comes out near -97% and drags the whole figure to -70%. Using all
+    observations also matches the panel that feeds the MZ regression (BDW's
+    n = 156,986 is the full price panel, not one row per contract), so Fig 5
+    and the regression describe the same sample."""
+    if yes_only.is_empty():
         return {}
-    df = day0.with_columns(pl.col("p").map_elements(price_band, return_dtype=pl.String).alias("band"))
+    df = yes_only.with_columns(pl.col("p").map_elements(price_band, return_dtype=pl.String).alias("band"))
 
     results: dict[str, dict[str, Any]] = {}
     for (band,), group in df.group_by("band"):
@@ -114,9 +127,24 @@ def returns_by_band(yes_only: pl.DataFrame, fee_schedule: dict[str, Any]) -> dic
                 continue
             gross.append((payout - p) / p)
             as_of = datetime.fromtimestamp(row["close_time_epoch"], tz=timezone.utc).isoformat()
+            # ACTUAL order size, never a hardcoded 1 (spec S1: "compute fees on
+            # actual per-order contract counts", with BDW's own C=100 line
+            # reproduced separately by fee_usd_bdw_illustration). The fee rounds
+            # the ORDER TOTAL up to the next cent, so a 1-contract assumption
+            # inflates the effective rate by up to 14x at 1c -- measured
+            # 2026-07-26, that alone drove the 1-10c band's net return to
+            # -181%, an arithmetic impossibility for a long position and a
+            # distortion concentrated in exactly the tail bins the FLB headline
+            # rests on. Per-contract fee is then count-invariant, which is the
+            # point: it is a rate, not a per-order charge.
+            count = row.get("count_fp")
+            if count is None or count <= 0:
+                gap_excluded += 1
+                continue
             try:
-                fee = fee_usd_for(fee_schedule, "taker", row["category"], 1.0, p, as_of)
-                net.append((payout - p - fee) / p)
+                order_fee = fee_usd_for(fee_schedule, "taker", row["category"], count, p, as_of)
+                fee_per_contract = order_fee / count
+                net.append((payout - p - fee_per_contract) / p)
             except FeeScheduleGapError:
                 gap_excluded += 1
         results[band] = {

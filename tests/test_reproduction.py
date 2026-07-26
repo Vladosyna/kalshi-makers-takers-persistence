@@ -18,10 +18,15 @@ def _epoch(year, month=6, day=1):
     return int(datetime(year, month, day, tzinfo=timezone.utc).timestamp())
 
 
-def _panel_row(ticker, event, p, y, *, lookback_day=0, category="Weather", close_epoch=None):
+def _panel_row(ticker, event, p, y, *, lookback_day=0, category="Weather", close_epoch=None,
+               count_fp=100.0):
+    """count_fp defaults to 100 contracts -- the fee model rounds the ORDER
+    TOTAL up to the next cent, so the order size is load-bearing for any net
+    return (spec S1: "compute fees on actual per-order contract counts")."""
     return {
         "ticker": ticker, "event_ticker": event, "lookback_day": lookback_day, "category": category,
         "close_time_epoch": close_epoch or _epoch(2023), "side": "yes", "y": y, "p": p, "source": "live",
+        "count_fp": count_fp,
     }
 
 
@@ -136,24 +141,71 @@ def _fee_schedule():
 
 
 def test_returns_by_band_gross_and_net():
-    rows = [_panel_row("T1", "E1", 0.5, 1.0, lookback_day=0, close_epoch=_epoch(2023))]
+    # 100 contracts at 50c: order fee = ceil(0.07*100*0.5*0.5*100)/100 = $1.75,
+    # i.e. $0.0175 per contract -- the honest rate. Rounding is per ORDER, so a
+    # 1-contract assumption would charge a whole cent and overstate it.
+    rows = [_panel_row("T1", "E1", 0.5, 1.0, lookback_day=0, close_epoch=_epoch(2023),
+                        count_fp=100.0)]
     result = returns_by_band(_panel(rows), _fee_schedule())
     band = result["41-50c"]
     assert band["n"] == 1
     # gross: (1.0 - 0.5) / 0.5 = 1.0
     assert abs(band["mean_gross_return"] - 1.0) < 1e-9
-    # net: fee = ceil(0.07*1*0.5*0.5*100)/100 = 0.02; (1.0-0.5-0.02)/0.5 = 0.96
-    assert abs(band["mean_net_return"] - 0.96) < 1e-6
+    # net: (1.0 - 0.5 - 0.0175) / 0.5 = 0.965
+    assert abs(band["mean_net_return"] - 0.965) < 1e-6
     assert band["fee_schedule_gap_excluded"] == 0
 
 
-def test_returns_by_band_excludes_only_lookback_day_0():
+def test_returns_by_band_net_return_respects_the_fee_rate_floor():
+    """The pinned convention is r = (payout - P - f) / P -- divided by the
+    STAKE, not by total outlay -- so a total loss gives -1 - f/P, slightly
+    below -100%, and that is correct rather than a bug. With a proportional
+    fee f = rate*P*(1-P), f/P = rate*(1-P) <= rate, so the floor is
+    -(1 + rate) = -1.07 at BDW's 7% taker rate.
+
+    That bound is what catches the real error: charging the ceil-to-cent fee as
+    if every order were 1 contract makes f/P as large as 1.0 at a 1c price, and
+    measured 2026-07-26 it drove the 1-10c band to -181% -- far outside the
+    floor, and concentrated in exactly the tail bins the FLB headline rests
+    on."""
     rows = [
-        _panel_row("T1", "E1", 0.5, 1.0, lookback_day=0),
-        _panel_row("T1", "E1", 0.4, 1.0, lookback_day=1),  # must be ignored
+        _panel_row("T1", "E1", 0.01, 0.0, close_epoch=_epoch(2023), count_fp=5000.0),
+        _panel_row("T2", "E2", 0.03, 0.0, close_epoch=_epoch(2023), count_fp=5000.0),
     ]
     result = returns_by_band(_panel(rows), _fee_schedule())
-    assert sum(b["n"] for b in result.values()) == 1
+    net = result["1-10c"]["mean_net_return"]
+    assert net is not None
+    assert net >= -1.07 - 1e-6, f"net return {net} is below the -(1 + fee rate) floor"
+    assert net < -1.0  # a total loss plus a fee IS worse than -100% of stake
+
+
+def test_returns_by_band_missing_order_size_is_excluded_not_assumed():
+    """The skip-rule panel has no count_fp (price_panel never stored it). Such
+    rows must be excluded from the NET figure and counted, never silently
+    charged a 1-contract fee."""
+    rows = [_panel_row("T1", "E1", 0.5, 1.0, close_epoch=_epoch(2023), count_fp=None)]
+    result = returns_by_band(_panel(rows), _fee_schedule())
+    band = result["41-50c"]
+    assert band["mean_gross_return"] is not None   # gross needs no fee
+    assert band["mean_net_return"] is None
+    assert band["fee_schedule_gap_excluded"] == 1
+
+
+def test_returns_by_band_uses_every_observation_as_an_entry_price():
+    """Amended 2026-07-26: this asserted the opposite -- that only
+    lookback_day == 0 counted. BDW's own ~-20% average pre-fee return settles
+    it: all observations give -0.250 on our universe, closing-day-only gives
+    -0.701, because a contract still at 1-10c on its final day has almost no
+    chance left and that band alone reaches -97%. Every observed price is an
+    entry price, which also makes Fig 5 and the MZ regression describe the same
+    sample (BDW's n = 156,986 is the full panel, not one row per contract)."""
+    rows = [
+        _panel_row("T1", "E1", 0.5, 1.0, lookback_day=0),
+        _panel_row("T1", "E1", 0.4, 1.0, lookback_day=1),
+    ]
+    result = returns_by_band(_panel(rows), _fee_schedule())
+    assert sum(b["n"] for b in result.values()) == 2
+    assert set(result) == {"41-50c", "31-40c"}
 
 
 def test_returns_by_band_fee_gap_excluded_from_net_not_gross():

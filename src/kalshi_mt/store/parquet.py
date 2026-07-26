@@ -152,6 +152,55 @@ class TradeStore:
         result = duckdb.connect().execute(query, [str(self.base / "month=*" / "trades.parquet")]).pl()
         return dict(zip(result["ticker"].to_list(), result["dollar_volume"].to_list()))
 
+    def last_trade_at_or_before(
+        self, refs: list[tuple[str, int, int]],
+    ) -> dict[tuple[str, int], tuple[float, int, float]]:
+        """For each (ticker, key, ref_epoch), the last fill at or before
+        ref_epoch: {(ticker, key): (yes_price_dollars, created_epoch, count_fp)}.
+
+        count_fp comes back because the fee model is defined on the ORDER
+        TOTAL with ceil-to-cent rounding, so the actual order size is required
+        to compute a fee correctly -- assuming 1 contract inflates the
+        effective rate up to 14x on the cheapest strikes (spec S1: "compute
+        fees on actual per-order contract counts").
+
+        This is the exact primitive BDW's "last trade before the same time"
+        describes, evaluated against Pass 2's full tape rather than by
+        re-querying the API -- so the backfilled panel (r1/panel.py) costs no
+        refetch and is exact rather than an approximation carried forward from
+        whichever days Pass 1 happened to capture.
+
+        Uses DuckDB's ASOF JOIN, which is precisely "the latest row not after
+        this timestamp" -- doing it per (ticker, ref) in Python would be ~365k
+        scans over a multi-million-row tape. Same DuckDB-not-polars reasoning
+        as the aggregates above."""
+        if not refs or not self.months_on_disk():
+            return {}
+        con = duckdb.connect()
+        con.execute("CREATE TEMP TABLE refs(ticker VARCHAR, key BIGINT, ref_epoch BIGINT)")
+        con.executemany("INSERT INTO refs VALUES (?, ?, ?)", refs)
+        # created_time is an ISO-8601 string in the tape; epoch() on a cast
+        # TIMESTAMPTZ keeps the comparison in UTC instants, matching the
+        # epochs callers compute with util.py's ET helpers.
+        rows = con.execute(
+            """
+            SELECT r.ticker, r.key, t.yes_price_dollars,
+                   CAST(epoch(CAST(t.created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch,
+                   t.count_fp
+            FROM refs r
+            ASOF JOIN (
+                SELECT ticker, yes_price_dollars, created_time, count_fp,
+                       CAST(epoch(CAST(created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch
+                FROM read_parquet(?)
+                WHERE yes_price_dollars IS NOT NULL AND created_time IS NOT NULL
+            ) t
+              ON r.ticker = t.ticker AND r.ref_epoch >= t.created_epoch
+            """,
+            [str(self.base / "month=*" / "trades.parquet")],
+        ).fetchall()
+        con.close()
+        return {(t, k): (p, ce, c) for t, k, p, ce, c in rows}
+
     def trade_count_by_ticker(self) -> dict[str, int]:
         """Fills per ticker, counted from the tape itself -- the authoritative
         side of spec S3's recorded-vs-fetched completeness contract.

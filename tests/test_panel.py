@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from kalshi_mt.r1.panel import basis_counts, build_doubled_panel, build_yes_only_panel, price_band
+from kalshi_mt.r1.panel import (
+    basis_counts,
+    build_doubled_panel,
+    build_yes_only_panel,
+    build_yes_only_panel_backfilled,
+    price_band,
+)
+from kalshi_mt.store.parquet import TradeStore
 from kalshi_mt.store import db
 
 
@@ -99,3 +106,118 @@ def test_price_band_boundaries():
     assert price_band(0.51) == "51-60c"
     assert price_band(0.99) == "91-99c"
     assert price_band(0.91) == "91-99c"
+
+
+# ---------------------------------------------------------------------------
+# build_yes_only_panel_backfilled -- the PRIMARY construction since the
+# 2026-07-26 amendment to CLAUDE.md S3. Built from Pass 2's tape, so the
+# fixtures here seed trades, not price_panel rows.
+# ---------------------------------------------------------------------------
+
+def _tape_trade(ticker, trade_id, created_time, price):
+    return {
+        "trade_id": trade_id, "ticker": ticker, "count_fp": 10.0,
+        "yes_price_dollars": price, "no_price_dollars": round(1 - price, 4),
+        "taker_outcome_side": "yes", "taker_book_side": "yes", "taker_side": "yes",
+        "created_time": created_time, "is_block_trade": False, "source": "historical",
+    }
+
+
+def _close_epoch(iso):
+    from kalshi_mt.util import iso_to_epoch
+    return iso_to_epoch(iso)
+
+
+def test_backfilled_panel_carries_the_last_price_across_a_silent_day(tmp_path):
+    """The rule the amendment turns on: a lookback day with no trade of its own
+    takes the last known price forward instead of vanishing. Trades exist only
+    on the closing day and 3 ET days earlier, so the two intervening days must
+    still produce rows, all carrying the older price."""
+    conn = db.connect(tmp_path / "t.db")
+    store = TradeStore(tmp_path / "parquet")
+    close_iso = "2024-06-20T20:00:00Z"
+    db.upsert_market(conn, {
+        "ticker": "A-1", "event_ticker": "EVT-1", "result": "yes", "category": "Weather",
+        "close_time_epoch": _close_epoch(close_iso), "in_r1_window": 1,
+    })
+    conn.commit()
+    store.append([
+        _tape_trade("A-1", "t-close", "2024-06-20T19:00:00Z", 0.80),
+        _tape_trade("A-1", "t-old", "2024-06-17T19:00:00Z", 0.40),
+    ])
+
+    panel = build_yes_only_panel_backfilled(conn, store, {"A-1"})
+    by_day = {r["lookback_day"]: r["p"] for r in panel.to_dicts()}
+    assert by_day[0] == 0.80                       # closing-day trade
+    assert by_day[1] == 0.40 and by_day[2] == 0.40  # silent days carry it forward
+    assert by_day[3] == 0.40                       # the older trade's own day
+    # Nothing before the first trade ever existed.
+    assert max(by_day) == 3
+
+
+def test_backfilled_panel_keeps_a_contract_with_no_closing_day_trade(tmp_path):
+    """Under the skip rule this contract contributes NOTHING -- its last trade
+    missed the closing ET day, and fetch_price_panel is all-or-nothing. That is
+    21.2% of the in-scope universe, so retaining them is most of why the
+    contract count moves from 25,803 to 32,728."""
+    conn = db.connect(tmp_path / "t.db")
+    store = TradeStore(tmp_path / "parquet")
+    db.upsert_market(conn, {
+        "ticker": "STALE", "event_ticker": "EVT-1", "result": "no", "category": "Weather",
+        "close_time_epoch": _close_epoch("2024-06-20T20:00:00Z"), "in_r1_window": 1,
+    })
+    conn.commit()
+    # Only trade is days before the close -- nothing on the closing ET day.
+    store.append([_tape_trade("STALE", "t-old", "2024-06-15T12:00:00Z", 0.25)])
+
+    panel = build_yes_only_panel_backfilled(conn, store, {"STALE"})
+    assert not panel.is_empty()
+    assert panel.to_dicts()[0]["p"] == 0.25
+    assert panel.to_dicts()[0]["y"] == 0.0  # result 'no'
+
+
+def test_backfilled_panel_excludes_unresolved_and_out_of_scope(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    store = TradeStore(tmp_path / "parquet")
+    for ticker, result in (("RESOLVED", "yes"), ("PENDING", None)):
+        db.upsert_market(conn, {
+            "ticker": ticker, "event_ticker": "EVT-1", "result": result, "category": "Weather",
+            "close_time_epoch": _close_epoch("2024-06-20T20:00:00Z"), "in_r1_window": 1,
+        })
+        store.append([_tape_trade(ticker, f"{ticker}-t", "2024-06-20T19:00:00Z", 0.6)])
+    conn.commit()
+
+    tickers = {r["ticker"] for r in build_yes_only_panel_backfilled(conn, store, {"RESOLVED", "PENDING"}).to_dicts()}
+    assert tickers == {"RESOLVED"}          # unresolved contributes nothing
+    assert build_yes_only_panel_backfilled(conn, store, set()).is_empty()
+
+
+def test_backfilled_panel_yields_more_rows_than_the_skip_rule(tmp_path):
+    """The headline of the amendment, as a property rather than a number: on
+    the same market the backfilled panel is never shallower than skip, and here
+    strictly deeper."""
+    conn = db.connect(tmp_path / "t.db")
+    store = TradeStore(tmp_path / "parquet")
+    close_iso = "2024-06-20T20:00:00Z"
+    db.upsert_market(conn, {
+        "ticker": "A-1", "event_ticker": "EVT-1", "result": "yes", "category": "Weather",
+        "close_time_epoch": _close_epoch(close_iso), "in_r1_window": 1,
+    })
+    # Skip-rule panel as Pass 1 would have stored it: only the two days that
+    # actually had trades.
+    for day, price, iso in ((0, 0.80, "2024-06-20T19:00:00Z"), (3, 0.40, "2024-06-17T19:00:00Z")):
+        db.upsert_price_panel_row(conn, {
+            "ticker": "A-1", "lookback_day": day, "trade_id": f"t{day}",
+            "yes_price_dollars": price, "created_time": iso, "source": "historical",
+        })
+    conn.commit()
+    store.append([
+        _tape_trade("A-1", "t-close", "2024-06-20T19:00:00Z", 0.80),
+        _tape_trade("A-1", "t-old", "2024-06-17T19:00:00Z", 0.40),
+    ])
+
+    skip = build_yes_only_panel(conn, {"A-1"})
+    backfilled = build_yes_only_panel_backfilled(conn, store, {"A-1"})
+    assert len(skip) == 2
+    assert len(backfilled) == 4
+    assert len(backfilled) > len(skip)

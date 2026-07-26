@@ -14,7 +14,12 @@ def _epoch(y, m=1, d=1):
     return int(datetime(y, m, d, tzinfo=timezone.utc).timestamp())
 
 
-def _seed_r1_market(conn, ticker, category, close_epoch, price, result):
+def _seed_r1_market(conn, ticker, category, close_epoch, price, result, *, trade_store=None):
+    """Seeds both panel sources. The PRIMARY construction (backfill) reads Pass
+    2's TAPE, not price_panel -- so a tape trade is what makes psi_bar_r1
+    computable; the price_panel row keeps the skip-rule sensitivity branch
+    exercised too. In production this dual requirement is already satisfied:
+    Pass 2 is complete for R1 (33,228 markets)."""
     db.upsert_market(conn, {
         "ticker": ticker, "event_ticker": f"{ticker}-EVT", "category": category,
         "result": result, "close_time_epoch": close_epoch, "in_r1_window": 1,
@@ -24,6 +29,15 @@ def _seed_r1_market(conn, ticker, category, close_epoch, price, result):
         "yes_price_dollars": price, "created_time": "2024-01-01T00:00:00Z", "source": "live",
     })
     conn.commit()
+    if trade_store is not None:
+        created = datetime.fromtimestamp(close_epoch - 3600, tz=timezone.utc)
+        trade_store.append([{
+            "trade_id": f"{ticker}-tape-0", "ticker": ticker, "count_fp": 100.0,
+            "yes_price_dollars": price, "no_price_dollars": round(1 - price, 4),
+            "taker_outcome_side": "yes", "taker_book_side": "yes", "taker_side": "yes",
+            "created_time": created.isoformat().replace("+00:00", "Z"),
+            "is_block_trade": False, "source": "historical",
+        }])
 
 
 def _seed_r2_market(conn, ticker, category, close_epoch, price, result, *, trade_store, notional=5000.0):
@@ -73,7 +87,8 @@ def _seed_full_fixture(conn, trade_store):
     for i in range(10):
         p = 0.1 + 0.08 * i  # 0.10 .. 0.82
         result = "yes" if p >= 0.5 else "no"
-        _seed_r1_market(conn, f"R1-{i}", "Weather", _epoch(2024, 6, 1) + i, p, result)
+        _seed_r1_market(conn, f"R1-{i}", "Weather", _epoch(2024, 6, 1) + i, p, result,
+                        trade_store=trade_store)
 
     # R2: 10 Weather markets, closing after the fee boundary (2025-05-01),
     # straddling the publication boundary (2025-09-08) -- 5 before, 5 after.

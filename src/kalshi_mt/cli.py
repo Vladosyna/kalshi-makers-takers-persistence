@@ -295,7 +295,12 @@ def build() -> None:
         VOLUME_READING_PIN,
         apply_and_log,
     )
-    from kalshi_mt.r1.panel import basis_counts, build_doubled_panel, build_yes_only_panel
+    from kalshi_mt.r1.panel import (
+        basis_counts,
+        build_doubled_panel,
+        build_yes_only_panel,
+        build_yes_only_panel_backfilled,
+    )
     from kalshi_mt.r1.reconcile import (
         compute_calendar_2024_mix,
         coverage_gap_breakdown,
@@ -325,10 +330,17 @@ def build() -> None:
             ).fetchall()
         }
 
-        yes_only = build_yes_only_panel(conn, in_scope)
+        # PRIMARY panel: backfill on no-trade lookback days (CLAUDE.md S3,
+        # amended 2026-07-26). Built from Pass 2's tape, so no refetch.
+        yes_only = build_yes_only_panel_backfilled(conn, trade_store, in_scope)
         doubled = build_doubled_panel(yes_only)
         reconciliation = reconcile_counts(conn, yes_only, doubled)
         gap_breakdown = coverage_gap_breakdown(conn, window="r1")
+
+        # SENSITIVITY panel: the skip rule, from Pass 1's stored price_panel.
+        skip_yes_only = build_yes_only_panel(conn, in_scope)
+        skip_doubled = build_doubled_panel(skip_yes_only)
+        skip_reconciliation = reconcile_counts(conn, skip_yes_only, skip_doubled)
 
         # SENSITIVITY: the literal dollar-notional reading, computed from Pass
         # 2's real tape. Logged under its own window label so it stays fully
@@ -359,10 +371,10 @@ def build() -> None:
         mix_path = write_frozen_2024_mix(mix, PROJECT_ROOT / "data" / "frozen_2024_mix.json")
 
         result = {
-            "volume_reading": {
-                "primary": "contract_count",
-                "sensitivity": "dollar_notional",
-                "pin": VOLUME_READING_PIN,
+            "construction": {
+                "volume_reading": {"primary": "contract_count", "sensitivity": "dollar_notional"},
+                "lookback_rule": {"primary": "backfill", "sensitivity": "skip"},
+                "volume_pin": VOLUME_READING_PIN,
                 "divergence_notes": DIVERGENCE_NOTES,
             },
             "filters": filter_summary,
@@ -374,6 +386,10 @@ def build() -> None:
                 "filters": dollar_summary,
                 "panel": basis_counts(dollar_yes_only, dollar_doubled),
                 "reconciliation": dollar_reconciliation["deltas"],
+            },
+            "sensitivity_skip_lookback": {
+                "panel": basis_counts(skip_yes_only, skip_doubled),
+                "reconciliation": skip_reconciliation["deltas"],
             },
         }
     finally:
@@ -389,7 +405,7 @@ def r1() -> None:
     maker/taker split vs Fig 6/Table 10, divergence log."""
     from kalshi_mt.fees.schedule import load_fee_schedule
     from kalshi_mt.r1.field_population import field_population_by_era
-    from kalshi_mt.r1.panel import build_doubled_panel, build_yes_only_panel
+    from kalshi_mt.r1.panel import build_doubled_panel, build_yes_only_panel_backfilled
     from kalshi_mt.r1.regression import verify_two_way_equals_one_way_clustering
     from kalshi_mt.r1.reproduction import (
         by_category_psi,
@@ -412,7 +428,12 @@ def r1() -> None:
                 "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r1')"
             ).fetchall()
         }
-        yes_only = build_yes_only_panel(conn, in_scope)
+        trade_store = TradeStore(config["storage"]["parquet_dir"])
+        # PRIMARY construction: backfill on no-trade lookback days
+        # (CLAUDE.md S3, amended 2026-07-26). Must match `kmt build`'s
+        # primary, or R1's reproduction tables would describe a different
+        # sample than the gate that cleared them.
+        yes_only = build_yes_only_panel_backfilled(conn, trade_store, in_scope)
         doubled = build_doubled_panel(yes_only)
         fee_schedule = load_fee_schedule()
 
@@ -426,7 +447,6 @@ def r1() -> None:
                 f"({','.join('?' * len(in_scope))})", list(in_scope)
             ).fetchall()
         } if in_scope else {}
-        trade_store = TradeStore(config["storage"]["parquet_dir"])
         trades = trade_store.read_all()
         mt_split = maker_taker_split(trades, resolutions, in_scope)
         field_population = field_population_by_era(trades)
@@ -473,7 +493,7 @@ def r2() -> None:
     artifact (data/frozen_2024_mix.json) -- Phase 7's own hard dependency,
     never recomputed from R2 data (spec's pre-registration firewall)."""
     from kalshi_mt.r1.filters import apply_and_log
-    from kalshi_mt.r1.panel import build_yes_only_panel
+    from kalshi_mt.r1.panel import build_yes_only_panel_backfilled
     from kalshi_mt.r1.reconcile import load_frozen_2024_mix
     from kalshi_mt.r1.regression import fit_mz_regression
     from kalshi_mt.r2.decomposition import category_weights_from_panel, decompose, delta_bar_with_ci
@@ -495,11 +515,13 @@ def r2() -> None:
 
     conn = db.connect(config["storage"]["db_path"])
     try:
+        trade_store = TradeStore(config["storage"]["parquet_dir"])
         # R2 reuses R1's own filter thresholds (volume/spread/duration/
-        # settlement-mismatch), applied to the R2 window -- r1/filters.py's
-        # apply_and_log is idempotent (re-running just re-derives the same
-        # exclusions), so calling it here rather than requiring a separate
-        # `kmt build --window r2` step keeps `kmt r2` runnable on its own.
+        # settlement-mismatch), applied to the R2 window -- apply_and_log
+        # REPLACES this window's exclusions rather than appending (see
+        # db.replace_universe_exclusions), so calling it here rather than
+        # requiring a separate `kmt build --window r2` step keeps `kmt r2`
+        # runnable on its own and re-derivable.
         # Contract reading, matching R1's pinned primary (r1/filters.py's
         # VOLUME_READING_PIN) -- analysis_plan.md S2 defines R2 as an extension
         # of R1's construction with no separate filter definition, so the two
@@ -519,8 +541,14 @@ def r2() -> None:
                 "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r2')"
             ).fetchall()
         }
-        r1_panel = build_yes_only_panel(conn, r1_scope)
-        r2_panel = build_yes_only_panel(conn, r2_scope)
+        # ONE construction on both sides of every boundary -- binding per
+        # CLAUDE.md S3's R2 corollary. delta measures the CHANGE in psi at
+        # the fee/publication boundaries within our own data, so a panel
+        # rule that differed across a boundary is the one thing that would
+        # actually break identification. Level fidelity to BDW is an R1
+        # goal; internal consistency is R2's.
+        r1_panel = build_yes_only_panel_backfilled(conn, trade_store, r1_scope)
+        r2_panel = build_yes_only_panel_backfilled(conn, trade_store, r2_scope)
         # The boundary-interacted regression (r2/regression.py) needs data
         # on BOTH sides of the fee boundary to estimate delta_fee at all --
         # R2's own window STARTS exactly at 2025-05-01 (the fee boundary),
@@ -532,7 +560,7 @@ def r2() -> None:
         # one fit -- this pooled scope is ONLY the regression's input;
         # category_weights_from_panel below stays R2-window-only, per spec
         # S2.3's own "R2-window weight" definition.
-        pooled_panel = build_yes_only_panel(conn, r1_scope | r2_scope)
+        pooled_panel = build_yes_only_panel_backfilled(conn, trade_store, r1_scope | r2_scope)
     finally:
         conn.close()
 
