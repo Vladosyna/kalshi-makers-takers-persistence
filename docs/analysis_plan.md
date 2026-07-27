@@ -1,6 +1,6 @@
 # Analysis Plan
 
-**Committed:** 2026-07-16 (UTC). **Status:** primary document — first version, no addenda yet.
+**Committed:** 2026-07-16 (UTC). **Status:** primary document. §1–§6 unchanged since commitment; see §7 Addendum 1 (2026-07-28) for the construction re-pins forced by R1's reproduction, all made before any R2 estimate existed.
 
 This document expands `Claude.md` (v1.1) §2/§4/§5 into exact equations, thresholds, and inequalities, committed once, before any R2 estimate is computed — per the spec's own requirement ("Commit `docs/analysis_plan.md` ... BEFORE computing any R2 estimate") and this repo's honesty framing: historical data means this is **specification commitment**, not outcome-blind pre-registration. R3 (§4 below) is the only genuinely prospective arm. Any later change is appended as a dated addendum (§7), never a silent rewrite of §1–§6 — the same append-only discipline the sibling lab's `docs/pre_analysis_plan.md` follows.
 
@@ -135,4 +135,27 @@ This is **specification commitment**, not outcome-blind pre-registration: the da
 
 ## 7. Addenda
 
-*(none yet)*
+### Addendum 1 — construction re-pins from R1's reproduction (committed 2026-07-28, UTC)
+
+**Still before any R2 estimate.** `reports/r2/` does not exist and neither `kmt r2` nor any δ estimate has been computed as of this addendum. Everything below was decided from R1's reproduction against BDW's *published* integers, never from R2 data. §1–§6 above are unchanged, per this document's own append-only rule.
+
+Why an addendum rather than an edit: R1's reproduction showed BDW's prose underdetermines their construction in three places, and each was resolved by measurement. The plan committed on 2026-07-16 described constructions we no longer use, so leaving it unamended while running R2 would have meant claiming commitment to a specification the code does not implement. Full evidence in `docs/r1_reproduction_findings.md`; the deciding numbers are restated here because they are what the commitment now rests on.
+
+**Legitimacy of calibrating against their integers.** §1's sequential gate is what makes this sound rather than circular: counts define the *sample*, ψ is the *result*. Tuning the sample definition to reproduce their sample is calibration; tuning ψ to reproduce their ψ would be circular and is not done anywhere. Where a quantity under test *is* itself the target — the maker/taker figures — the construction was instead read off the source paper directly (item 4), precisely because inferring it from those integers would have been circular.
+
+**1. Volume filter — CONTRACTS, not dollar notional (primary).** BDW write "volume ≥ \$1,000"; Kalshi's `volume` field is denominated in contracts and the API exposes no notional field. At the volume-filter stage our independently collected universe gives 44,946 contracts against their 46,282 (−2.9%) and 12,416 events against their 12,403 (**+0.1%**). The dollar-notional reading is retained as a **reported sensitivity branch** (it roughly halves the sample), logged under its own `universe_log` label so it cannot narrow the primary universe.
+
+**2. No-trade lookback days — BACKFILL, not skip (primary).** Their own n decides it: 156,986 / 46,282 = **3.39** prices per contract, unreachable under skip (we measure 2.50; backfill gives 3.72, so the two rules bracket their value). Skip additionally dropped whole contracts, not just rows — 21.2% of in-scope contracts had no trade inside their closing ET day and contributed nothing at all. Skip is retained as a reported sensitivity branch. This amends the construction pin in `Claude.md` §3, which was itself amended on 2026-07-26 with the same evidence.
+
+**3. Return-by-band entry price — every panel observation, not the closing day alone.** Their stated ≈ −20% average pre-fee return decides it: all observations give −0.250, closing-day-only gives −0.701. This also makes the Fig 5 figure and the MZ regression describe the same sample.
+
+**4. Maker/taker basis — the doubled PANEL, not the fill tape.** Read directly off the primary PDF rather than inferred: Table 10 totals 313,972 observations with Makers exactly 156,986 (the doubled panel, one role per side), and the text states "because we include the same contract at different points during its lifetime … up to 11 times", which only parses on a panel basis. Roles follow the taker side of the trade that set each observation's price. Fees are asymmetric by construction — Figure 6 reports *post-fee* returns and makers were fee-exempt in their window.
+
+**5. Binding consequence for R2 — one construction on both sides of every boundary.** δ measures the *change* in ψ at the fee and publication boundaries within our own data, and §2.2's verdicts reference our own `ψ̄_R1`. A panel or filter rule that differed across a boundary is the one thing that would actually break identification, so the primary construction (items 1, 2, 4) is applied uniformly to the R1 panel, the R2 panel and the pooled cross-boundary fit. Level fidelity to BDW is an R1 goal; internal consistency is R2's. This tightens §2.1 without altering its equation or thresholds.
+
+**6. Fee-boundary precision — a disclosed limitation, not a change.** The source paper says only that "Kalshi began to charge fees on Makers after April 2025", with no date and no rate. `data/fees.yaml`'s 2025-05-01 therefore stands as an operationalization of that sentence, and the 0.0175 maker rate does **not** come from the paper and remains unconfirmed against a primary artifact. §3's three fee layers and §3.3's break-even ribbon are unchanged; the ribbon is what carries this uncertainty, and the "fragile" rule in §3.3 continues to withhold escalation where a margin's sign flips inside the plausible band. The paper *does* confirm the taker formula verbatim — `$0.07·P(1−P)`, order total rounded up to the nearest cent — which is what §3.1 and the implementation use.
+
+**Unresolved dependencies, recorded so their absence is not discovered at write-up:**
+
+- **Polymarket control venue (§2.4).** The SII-WANGZJ archive carries no category column, so the Polymarket→Kalshi strata mapping §2.4 calls for cannot be built from it as it stands. §2.4's caveats already deny this arm identifying power; if the mapping proves impossible the overlay is reported at venue level only, and that limitation is stated in the paper rather than quietly dropped.
+- **R2 quote coverage.** As of this addendum, quotes exist for only 2 of R2's 14 months (2026-05, 2026-06); the months bracketing the publication boundary are not yet fetched. No δ can be computed until they are. This is a collection gap, not a specification change, and it is being closed before §2.1 is run.
