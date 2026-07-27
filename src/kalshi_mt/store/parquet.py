@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from pathlib import Path
 
 import duckdb
@@ -22,6 +23,8 @@ import polars as pl
 from kalshi_mt.util import PROJECT_ROOT
 
 log = logging.getLogger(__name__)
+
+COMPACT_AT_PARTS = 64
 
 TRADE_SCHEMA = {
     "trade_id": pl.String,
@@ -52,60 +55,98 @@ class TradeStore:
     def _partition(self, month: str) -> Path:
         return self.base / f"month={month}" / "trades.parquet"
 
+    def _part_files(self, month: str) -> list[Path]:
+        d = self.base / f"month={month}"
+        return sorted(d.glob("*.parquet")) if d.is_dir() else []
+
     def append(self, rows: list[dict]) -> int:
-        """Append trade rows, deduplicating on trade_id within each month
-        partition. Returns the number of genuinely new rows written."""
+        """Append trade rows as a NEW part file per call. Returns rows written.
+
+        Deliberately does NOT read the existing partition. It used to: read the
+        whole month, anti-join on trade_id, concat, rewrite. That is O(partition
+        size) per append, so cost grows with everything already collected --
+        measured live 2026-07-27, Pass 2 over the R2 window decayed from ~6.8
+        req/s to ~0.5 req/s once month=2026-06 reached 371MB, because every
+        page of every market paid a ~750MB read+write. Remaining ETA had gone
+        from ~4h to 17.5h and was still worsening.
+
+        Dedup therefore moves to READ time (see _read_month / the DuckDB
+        aggregates, which all dedup on trade_id). Writes stay append-only and
+        O(batch); a page re-fetched on resume simply lands as a duplicate row
+        that every reader drops. Within a single batch dedup still happens here,
+        since that is free.
+
+        Part files are compacted once a month accumulates COMPACT_AT_PARTS of
+        them, which bounds both file count and read-side fragmentation while
+        keeping the rewrite cost amortised over many appends rather than paid
+        on every one."""
         if not rows:
             return 0
         clean = [{col: r.get(col) for col in TRADE_SCHEMA} for r in rows]
         df = pl.DataFrame(clean, schema=TRADE_SCHEMA)
         df = df.filter(pl.col("created_time").is_not_null() & pl.col("trade_id").is_not_null())
+        df = df.unique(subset=["trade_id"], keep="first")
         if df.is_empty():
             return 0
         written = 0
         df = df.with_columns(pl.col("created_time").str.slice(0, 7).alias("_month"))
         for (month,), part in df.partition_by("_month", as_dict=True).items():
             part = part.drop("_month")
-            path = self._partition(month)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if path.exists():
-                # memory_map=False is load-bearing on Windows, not a tuning
-                # knob: this is a read-modify-write of ONE path, and a
-                # memory-mapped read keeps a mapping open on it for as long as
-                # the DataFrame lives, so the write below fails with
-                # ERROR_USER_MAPPED_FILE (os error 1224). Confirmed live
-                # 2026-07-26 -- a Pass 2 run of 29,285 R1 tickers lost exactly
-                # one to it ("cannot be performed on a file with a
-                # user-mapped section open", month=2025-01). Reading eagerly
-                # into memory leaves nothing mapped by the time we replace it.
-                existing = pl.read_parquet(path, memory_map=False)
-                keys = existing.select("trade_id")
-                part = part.join(keys, on="trade_id", how="anti")
-                if part.is_empty():
-                    continue
-                merged = pl.concat([existing, part], how="diagonal")
-            else:
-                merged = part
-            # Write to a sibling temp file, then atomically replace. A crash
-            # partway through write_parquet would otherwise leave a truncated
-            # partition -- and unlike a lost page, that destroys trades already
-            # committed by earlier appends, which no resume can recover.
-            tmp = path.with_suffix(".parquet.tmp")
-            merged.write_parquet(tmp)
-            os.replace(tmp, path)
+            d = self.base / f"month={month}"
+            d.mkdir(parents=True, exist_ok=True)
+            # uuid4, not a counter: concurrent tickers share the month directory
+            # and a counter would collide. Written to .tmp then moved, so a
+            # reader never sees a half-written part.
+            name = f"part-{uuid.uuid4().hex}.parquet"
+            tmp = d / (name + ".tmp")
+            part.write_parquet(tmp)
+            os.replace(tmp, d / name)
             written += len(part)
+            self._maybe_compact(month)
         return written
+
+    def _maybe_compact(self, month: str) -> None:
+        """Merge a month's part files once there are enough to be worth it.
+        O(partition) but amortised over COMPACT_AT_PARTS appends, versus the
+        old code paying it on every single one."""
+        parts = self._part_files(month)
+        if len(parts) < COMPACT_AT_PARTS:
+            return
+        merged = pl.concat(
+            [pl.read_parquet(f, memory_map=False) for f in parts], how="diagonal"
+        ).unique(subset=["trade_id"], keep="first")
+        d = self.base / f"month={month}"
+        name = f"part-{uuid.uuid4().hex}.parquet"
+        tmp = d / (name + ".tmp")
+        merged.write_parquet(tmp)
+        os.replace(tmp, d / name)
+        for f in parts:
+            try:
+                f.unlink()
+            except OSError:
+                # A reader may hold it briefly on Windows; it is now redundant
+                # (its rows are in the merged file and readers dedup), so a
+                # failed unlink costs disk space, never correctness.
+                log.warning("could not remove compacted part %s", f)
+
+    def _read_month(self, month: str) -> pl.DataFrame:
+        parts = self._part_files(month)
+        if not parts:
+            return pl.DataFrame(schema=TRADE_SCHEMA)
+        return pl.concat(
+            [pl.read_parquet(f, memory_map=False) for f in parts], how="diagonal"
+        ).unique(subset=["trade_id"], keep="first")
 
     def months_on_disk(self) -> list[str]:
         return sorted(p.name.split("=", 1)[1] for p in self.base.glob("month=*") if p.is_dir())
 
     def read_range(self, months: list[str]) -> pl.DataFrame:
-        frames = [
-            pl.read_parquet(self._partition(m)) for m in months if self._partition(m).exists()
-        ]
+        frames = [df for m in months if not (df := self._read_month(m)).is_empty()]
         if not frames:
             return pl.DataFrame(schema=TRADE_SCHEMA)
-        return pl.concat(frames, how="diagonal")
+        # Dedup again across months: a trade_id is unique tape-wide, and a
+        # re-fetched page could in principle straddle a month boundary.
+        return pl.concat(frames, how="diagonal").unique(subset=["trade_id"], keep="first")
 
     def read_all(self) -> pl.DataFrame:
         return self.read_range(self.months_on_disk())
@@ -146,10 +187,12 @@ class TradeStore:
         if not self.months_on_disk():
             return {}
         query = (
-            "SELECT ticker, SUM(count_fp * yes_price_dollars) AS dollar_volume "
-            "FROM read_parquet(?) GROUP BY ticker"
+            "SELECT ticker, SUM(count_fp * yes_price_dollars) AS dollar_volume FROM ("
+            "  SELECT DISTINCT ON (trade_id) trade_id, ticker, count_fp, yes_price_dollars "
+            "  FROM read_parquet(?)"
+            ") GROUP BY ticker"
         )
-        result = duckdb.connect().execute(query, [str(self.base / "month=*" / "trades.parquet")]).pl()
+        result = duckdb.connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
         return dict(zip(result["ticker"].to_list(), result["dollar_volume"].to_list()))
 
     def last_trade_at_or_before(
@@ -196,12 +239,12 @@ class TradeStore:
             ASOF JOIN (
                 SELECT ticker, yes_price_dollars, created_time, count_fp, taker_outcome_side,
                        CAST(epoch(CAST(created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch
-                FROM read_parquet(?)
+                FROM (SELECT DISTINCT ON (trade_id) * FROM read_parquet(?))
                 WHERE yes_price_dollars IS NOT NULL AND created_time IS NOT NULL
             ) t
               ON r.ticker = t.ticker AND r.ref_epoch >= t.created_epoch
             """,
-            [str(self.base / "month=*" / "trades.parquet")],
+            [str(self.base / "month=*" / "*.parquet")],
         ).fetchall()
         con.close()
         return {(t, k): (p, ce, c, tk) for t, k, p, ce, c, tk in rows}
@@ -225,6 +268,8 @@ class TradeStore:
         Same DuckDB-not-polars reasoning as dollar_volume_by_ticker above."""
         if not self.months_on_disk():
             return {}
-        query = "SELECT ticker, COUNT(*) AS n FROM read_parquet(?) GROUP BY ticker"
-        result = duckdb.connect().execute(query, [str(self.base / "month=*" / "trades.parquet")]).pl()
+        query = (
+            "SELECT ticker, COUNT(DISTINCT trade_id) AS n FROM read_parquet(?) GROUP BY ticker"
+        )
+        result = duckdb.connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
         return dict(zip(result["ticker"].to_list(), result["n"].to_list()))

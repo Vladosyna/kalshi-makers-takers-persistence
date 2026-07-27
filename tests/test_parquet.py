@@ -31,7 +31,12 @@ def test_append_dedups_on_trade_id(tmp_path):
     store = TradeStore(tmp_path / "parquet")
     store.append([_trade("t1")])
     written_again = store.append([_trade("t1"), _trade("t2")])
-    assert written_again == 1  # t1 already present, only t2 is new
+    # append() is append-only now: it reports ROWS WRITTEN, not rows that were
+    # new to the store. Deduplication moved to read time (2026-07-27) because
+    # reading the partition on every append was O(partition) and collapsed Pass
+    # 2's throughput once a month reached 371MB. What must still hold is that
+    # readers never see the duplicate -- asserted below.
+    assert written_again == 2
     df = store.read_for_ticker("ABC-1")
     assert len(df) == 2
 
@@ -124,8 +129,13 @@ def test_trade_count_by_ticker_is_unaffected_by_a_replayed_page(tmp_path):
     store = TradeStore(tmp_path / "parquet")
     page = [_trade("t1", ticker="ABC-1"), _trade("t2", ticker="ABC-1")]
     assert store.append(page) == 2
-    assert store.append(page) == 0          # replay: nothing new written
+    assert store.append(page) == 2          # replay is written again...
+    # ...and every reader must still see exactly the two distinct trades.
     assert store.trade_count_by_ticker() == {"ABC-1": 2}
+    assert len(store.read_for_ticker("ABC-1")) == 2
+    assert len(store.read_all()) == 2
+    vol = store.dollar_volume_by_ticker()
+    assert abs(vol["ABC-1"] - 2 * 1.0 * 0.49) < 1e-9   # not double-counted
 
 
 def test_trade_count_by_ticker_across_month_partitions(tmp_path):
@@ -151,6 +161,26 @@ def test_append_read_modify_write_leaves_no_temp_file_and_survives_repeat(tmp_pa
 
     leftovers = list((tmp_path / "parquet").rglob("*.tmp"))
     assert leftovers == []
-    # The month partition still holds exactly one readable data file.
-    files = sorted(p.name for p in (tmp_path / "parquet").rglob("*") if p.is_file())
-    assert files == ["trades.parquet"]
+    # Append-only: each call leaves its own part file, none half-written.
+    files = [p for p in (tmp_path / "parquet").rglob("*") if p.is_file()]
+    assert len(files) == 2
+    assert all(f.name.startswith("part-") and f.suffix == ".parquet" for f in files)
+
+
+def test_append_compacts_once_a_month_accumulates_enough_parts(tmp_path):
+    """Append-only writes would otherwise leave one file per call -- ~100k of
+    them across Pass 2 -- which slows every read and strains the filesystem.
+    Compaction merges them once the threshold is reached, paying the
+    O(partition) rewrite once per COMPACT_AT_PARTS appends instead of on every
+    append (the behaviour that collapsed throughput before 2026-07-27)."""
+    from kalshi_mt.store.parquet import COMPACT_AT_PARTS
+
+    store = TradeStore(tmp_path / "parquet")
+    for i in range(COMPACT_AT_PARTS + 2):
+        store.append([_trade(f"t{i}", ticker="ABC-1")])
+
+    parts = list((tmp_path / "parquet").rglob("*.parquet"))
+    assert len(parts) < COMPACT_AT_PARTS, "compaction did not fire"
+    # Compaction must not lose or duplicate anything.
+    assert store.trade_count_by_ticker() == {"ABC-1": COMPACT_AT_PARTS + 2}
+    assert list((tmp_path / "parquet").rglob("*.tmp")) == []
