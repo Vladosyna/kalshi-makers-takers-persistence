@@ -44,6 +44,24 @@ app = typer.Typer(
 )
 
 
+def _parse_date_to_epoch(
+    value: str | None, flag: str, *, end_of_day: bool = False
+) -> int | None:
+    """YYYY-MM-DD -> UTC epoch seconds. `end_of_day` makes an upper bound
+    inclusive of the whole day, so --close-to 2025-12-31 means through
+    23:59:59 rather than silently dropping that day's markets."""
+    if value is None:
+        return None
+    from datetime import datetime, time, timezone
+    try:
+        d = datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        typer.secho(f"{flag} must be YYYY-MM-DD, got {value!r}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from None
+    t = time(23, 59, 59) if end_of_day else time(0, 0, 0)
+    return int(datetime.combine(d, t, tzinfo=timezone.utc).timestamp())
+
+
 def _not_implemented(command: str, phase: str) -> None:
     typer.secho(
         f"`kmt {command}` is not implemented yet (arrives in {phase}).",
@@ -175,6 +193,20 @@ def fetch_pass1(
              "(observed 2026-07-26: the last 15 series failed identically on two consecutive "
              "passes until they were the only work left).",
     ),
+    panel_quote_close_from: str | None = typer.Option(
+        None, "--panel-quote-close-from",
+        help="Restrict the panel/quote fetch to markets closing on/after this date (YYYY-MM-DD).",
+    ),
+    panel_quote_close_to: str | None = typer.Option(
+        None, "--panel-quote-close-to",
+        help="Restrict the panel/quote fetch to markets closing on/before this date (YYYY-MM-DD). "
+             "Together with --panel-quote-close-from this prioritises the months an estimate "
+             "actually needs: measured 2026-07-28, R2's full backlog is ~751k markets (weeks), "
+             "but delta_fee/delta_pub are identified only by the months BRACKETING their "
+             "boundaries -- 2025-05..2025-12 is ~104k markets, and without those months no delta "
+             "exists at all however much of 2026 is collected. The phase orders by ticker, so "
+             "months interleave arbitrarily and the ones that matter arrive last unless asked for.",
+    ),
     panel_quote_window: str | None = typer.Option(
         None, "--panel-quote-window",
         help="Restrict ONLY the panel/quote fetch to one analysis window ('r1' or 'r2'); "
@@ -220,6 +252,8 @@ def fetch_pass1(
                 live_max_pages=live_max_pages, series_resolution_batch_size=resolve_batch_size,
                 min_volume_fp=min_volume_fp, min_open_duration_s=min_open_duration_s,
                 panel_quote_window=panel_quote_window,
+                panel_quote_close_from=_parse_date_to_epoch(panel_quote_close_from, "--panel-quote-close-from"),
+                panel_quote_close_to=_parse_date_to_epoch(panel_quote_close_to, "--panel-quote-close-to", end_of_day=True),
                 resolve_max_spread=resolve_max_spread,
                 max_concurrent_series=max_concurrent_series,
             )

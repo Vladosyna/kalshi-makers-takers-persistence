@@ -718,6 +718,8 @@ async def run_pass1(
     min_volume_fp: float | None = 1000.0,
     min_open_duration_s: float | None = 86_400.0,
     panel_quote_window: str | None = None,
+    panel_quote_close_from: int | None = None,
+    panel_quote_close_to: int | None = None,
     panel_quote_concurrency: int = 20,
     resolve_max_spread: float | None = None,
     max_concurrent_series: int = 20,
@@ -792,6 +794,19 @@ async def run_pass1(
         # Column name, not a bound parameter -- validated against a fixed map
         # so it can never carry caller-supplied SQL.
         scope_sql += f" AND {ANALYSIS_WINDOW_COLUMNS[panel_quote_window]} = 1"
+    # Close-time range, for prioritising the months an estimate actually needs.
+    # Confirmed live 2026-07-28: R2's full panel/quote backlog is ~751k markets
+    # (~weeks), but delta_fee and delta_pub are only identified by the months
+    # BRACKETING their boundaries -- 2025-05..2025-12 is ~104k markets, and
+    # without those months no delta exists at all no matter how much of 2026 is
+    # collected. Ordering by ticker interleaves months arbitrarily, so without
+    # this the boundary months arrive last.
+    if panel_quote_close_from is not None:
+        scope_sql += " AND close_time_epoch >= ?"
+        extra_params.append(panel_quote_close_from)
+    if panel_quote_close_to is not None:
+        scope_sql += " AND close_time_epoch <= ?"
+        extra_params.append(panel_quote_close_to)
     base_query = (
         "SELECT ticker, event_ticker, series_ticker, close_time_epoch FROM markets "
         "WHERE close_time_epoch IS NOT NULL "

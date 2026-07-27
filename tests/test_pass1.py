@@ -972,3 +972,55 @@ def test_resolve_without_max_spread_still_covers_unquoted_markets(tmp_path):
     client = _FakeResolveClient()
     stats = asyncio.run(pass1.resolve_series_and_category(client, conn))
     assert stats["resolved_this_run"] == 1
+
+
+def test_run_pass1_panel_quote_close_range_prioritises_the_months_that_matter(tmp_path):
+    """The panel/quote keyset cursor is ordered by ticker, so close months
+    interleave arbitrarily. Measured 2026-07-28: R2's full backlog is ~751k
+    markets, but delta_fee/delta_pub are identified only by the months
+    bracketing their boundaries -- without those months no delta exists at all,
+    however much of 2026 is collected."""
+    conn = db.connect(tmp_path / "t.db")
+    common = {"volume_fp": 5000.0, "in_r2_window": 1}
+    # Close times: 2025-07 (inside the wanted range) and 2026-06 (outside).
+    in_range = et_to_epoch(datetime(2025, 7, 15, 12, 0, tzinfo=ET))
+    out_range = et_to_epoch(datetime(2026, 6, 15, 12, 0, tzinfo=ET))
+    db.upsert_market(conn, {
+        "ticker": "WANTED", "open_time_epoch": in_range - 5 * 86400,
+        "close_time_epoch": in_range, **common,
+    })
+    db.upsert_market(conn, {
+        "ticker": "LATER", "open_time_epoch": out_range - 5 * 86400,
+        "close_time_epoch": out_range, **common,
+    })
+    conn.commit()
+
+    client = _NoOpDiscoveryClient()
+    stats = asyncio.run(pass1.run_pass1(
+        client, conn, max_series_this_run=0,
+        panel_quote_close_from=et_to_epoch(datetime(2025, 5, 1, tzinfo=ET)),
+        panel_quote_close_to=et_to_epoch(datetime(2025, 12, 31, 23, 59, 59, tzinfo=ET)),
+    ))
+    assert "WANTED" in client.trade_fetch_calls
+    assert "LATER" not in client.trade_fetch_calls
+    assert stats["markets_processed"] == 1
+
+
+def test_run_pass1_close_range_bounds_are_inclusive(tmp_path):
+    """A market closing exactly on the boundary date must be kept -- an
+    exclusive upper bound would silently drop that day's markets."""
+    conn = db.connect(tmp_path / "t.db")
+    edge = et_to_epoch(datetime(2025, 12, 31, 20, 0, tzinfo=ET))
+    db.upsert_market(conn, {
+        "ticker": "EDGE", "volume_fp": 5000.0, "in_r2_window": 1,
+        "open_time_epoch": edge - 5 * 86400, "close_time_epoch": edge,
+    })
+    conn.commit()
+
+    client = _NoOpDiscoveryClient()
+    stats = asyncio.run(pass1.run_pass1(
+        client, conn, max_series_this_run=0,
+        panel_quote_close_from=et_to_epoch(datetime(2025, 5, 1, tzinfo=ET)),
+        panel_quote_close_to=edge,
+    ))
+    assert stats["markets_processed"] == 1
