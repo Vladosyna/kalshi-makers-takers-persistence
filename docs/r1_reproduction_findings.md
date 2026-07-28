@@ -1,19 +1,25 @@
 # R1 reproduction: findings, construction pins, and open divergences
 
-**Status 2026-07-27.** R1 now reproduces every headline quantity BDW report: the
-Fig 3 favorite-longshot curve, all four Fig 5 return markers, Fig 6 and Table
-10's maker/taker split including the full maker-share curve, Table 9's by-year
-psi in sign and significance, and Table 8's category heterogeneity.
+**Status 2026-07-28.** R1 reproduces the Fig 3 favorite-longshot curve, Fig 6
+and Table 10's maker/taker split including the full maker-share curve, Table 9's
+by-year psi in sign and significance, Table 8's category heterogeneity, and
+three of the four Fig 5 return markers. The fourth — "contracts ≤10c lose more
+than 60%" — lands at −58.2% once the panel is made reproducible (§2.4) and the
+fee model stops dropping 2021–2022 rows; it is reported as missed, not rounded
+into place. An earlier revision of this document, dated 2026-07-27, claimed all
+four.
 
 Working record of what reproduces, what does not, and every construction
 decision taken to get there — written to be quotable in
 the note's divergence-log section rather than as internal notes. Every number
 here is reproducible from the committed pipeline (`kmt build`, `kmt r1`,
-`tools/measure_backfill_hypothesis.py`).
+`tools/measure_backfill_hypothesis.py`, `tools/measure_fee_model_impact.py`,
+`tools/check_panel_determinism.py`).
 
 Sample: our own independently collected R1 universe (2021-01-01 → 2025-04-30),
 160,768 discovered in-window markets, 32,728 passing construction, 121,803 Yes
-price observations, 9.46M fills in Pass 2's tape.
+price observations. Pass 2's tape now holds 54,984,185 fills across both
+windows (9.46M of them in R1's).
 
 ---
 
@@ -40,23 +46,48 @@ reproduces cleanly on independently collected data.
 
 ### Returns by band (BDW Fig 5)
 
-| Band | n | Gross | Net of taker fee |
-|---|---|---|---|
-| 1–10c | 55,704 | −0.472 | **−0.605** |
-| 11–20c | 13,662 | −0.271 | −0.341 |
-| 21–30c | 8,082 | −0.193 | −0.229 |
-| 31–40c | 5,818 | −0.083 | −0.139 |
-| 41–50c | 4,122 | −0.028 | −0.062 |
-| 51–60c | 3,209 | +0.097 | +0.047 |
-| 61–70c | 3,284 | +0.101 | +0.060 |
-| 71–80c | 3,558 | +0.098 | +0.072 |
-| 81–90c | 5,303 | +0.071 | +0.056 |
-| 91–99c | 19,061 | +0.016 | +0.013 |
-| **all** | 121,803 | **−0.250** | |
+**Restated 2026-07-28** after two corrections, both described below: the
+tie-break pin (§2.4) that made the panel reproducible, and a fee model that no
+longer silently drops the 2021–2022 observations from the net column. The
+figures below reproduce exactly across processes
+(`tools/measure_fee_model_impact.py`, two independent runs identical).
 
-All four of BDW's stated markers hold: ≤10c lose more than 60% (net −60.5%),
-small positive returns above 50c, still positive net above 70c, and an average
-pre-fee return near their ≈ −20% (ours −25%).
+| Band | n | Gross | Net, BDW's fee model | Net, Kalshi's published schedule |
+|---|---|---|---|---|
+| 1–10c | 55,744 | −0.4625 | **−0.5816** | −0.5777 |
+| 11–20c | 13,603 | −0.2706 | −0.3347 | −0.3296 |
+| 21–30c | 8,101 | −0.1957 | −0.2521 | −0.2496 |
+| 31–40c | 5,825 | −0.0862 | −0.1338 | −0.1330 |
+| 41–50c | 4,125 | −0.0275 | −0.0672 | −0.0668 |
+| 51–60c | 3,200 | +0.0958 | +0.0635 | +0.0637 |
+| 61–70c | 3,283 | +0.1043 | +0.0791 | +0.0791 |
+| 71–80c | 3,528 | +0.0972 | +0.0788 | +0.0789 |
+| 81–90c | 5,342 | +0.0686 | +0.0582 | +0.0582 |
+| 91–99c | 19,052 | +0.0162 | +0.0133 | +0.0133 |
+| **all** | 121,803 | **−0.250** | | |
+
+**Three of BDW's four stated markers hold; one now narrowly misses.** Small
+positive returns above 50c: yes. Still positive net above 70c: yes. Average
+pre-fee return near their ≈ −20%: ours −25%, as before. But **≤10c lose 58.2%,
+not "more than 60%"** — an earlier draft of this document reported −60.5% and
+recorded the marker as met.
+
+What moved it is worth separating, because only one part is about fees. Gross
+in that band went from −0.472 to −0.4625, and gross has no fee in it at all:
+that is the tie-break pin changing which fill sets the price at tied instants,
+which happens most in exactly this band (thin, cheap markets, where a sweeping
+order fills across several levels at one timestamp). The rest is the net column
+gaining the 2021–2022 observations it used to drop. Neither is a modelling
+choice made to move the number; both are corrections that happened to move it,
+and the marker is reported as missed rather than rounded into place.
+
+**Fee model: BDW's, not Kalshi's, is primary here.** The last column prices the
+same panel with Kalshi's own published schedule — the S&P500/Nasdaq-100 half
+rate (18.3% of in-scope markets) and the 0.14 rate in force until 2021-08-01,
+neither of which BDW model. R1's primary stays BDW's uniform 0.07 so that a gap
+against their Fig 5 is theirs to explain rather than our fee model talking.
+The difference is at most **51 basis points** (11–20c band) and under 2bp above
+50c: the carve-outs are real, and small enough that no marker turns on them.
 
 ### ψ by year (BDW Table 9)
 
@@ -208,6 +239,33 @@ at 1–10c on its final day has almost no chance left, so that band alone reache
 −97% and drags the whole figure to −70%. Using every observation also makes Fig 5
 and the MZ regression describe the same sample — BDW's n = 156,986 is the full
 price panel, not one row per contract.
+
+### 2.4 Tied fill timestamps: smallest `trade_id` wins
+
+Kalshi stamps every fill of a sweeping order with the **same** timestamp, and
+those fills can cross several price levels. So "the last trade at or before T"
+— BDW's own construction, and the primitive the backfilled panel is built on —
+has **no unique answer** whenever an instant carries more than one fill.
+
+Left unspecified, the answer came from whatever order DuckDB's parallel scan
+happened to produce. Measured 2026-07-28 on an unchanged 55.0M-fill tape, two
+builds returned the same 121,803 panel rows with **~60 of them in different
+price bands**, and the 1–10c gross return moving in the third decimal. Every R1
+figure published before this pin was one draw from that distribution.
+
+The rule is now: among fills sharing a `(ticker, instant)`, take the smallest
+`trade_id`. Arbitrary, but fixed — which is the whole requirement.
+`tools/check_panel_determinism.py` builds the panel twice and compares rows,
+prices, order sizes and taker sides; it reports IDENTICAL, and two separate
+runs of `tools/measure_fee_model_impact.py` agree to the last digit.
+
+Two things this is **not**: it is not a fee or modelling choice (it changes
+gross returns, which contain no fee), and it is not caused by duplicate rows on
+the tape — the tape holds 54,984,185 fills under 54,984,185 distinct
+`trade_id`s, checked directly.
+
+*(A first diagnosis blamed a `preserve_insertion_order` flag added the same
+day. Removing it did not restore determinism: the ties were there all along.)*
 
 ---
 
