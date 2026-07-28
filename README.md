@@ -99,7 +99,7 @@ fee-sensitivity ribbon with a pre-registered "fragile" rule).
 ## Project status
 
 All ten phases in the engineering brief are implemented and tested
-(**309/309 tests passing**):
+(**385/385 tests passing**):
 
 - [x] Phase 0 — scaffold, config, CLI skeleton, scope guard
 - [x] Phase 1 — Step Zero: the hard gate verifying Kalshi's public API has
@@ -140,6 +140,14 @@ full R1+R2 window — every stage of that pipeline is already implemented and
 tested end-to-end against live samples, independent of how much of the
 universe has been pulled so far.
 
+Collection state (2026-07-28): R1's window is collected and reproduces every
+headline BDW quantity — see [`docs/r1_reproduction_findings.md`](docs/r1_reproduction_findings.md).
+Pass 2's trade tape is complete for both windows. What R2 is still waiting on
+is closing quotes for the months that *bracket* its two boundaries
+(2025-05 … 2025-12, ~104k eligible markets); `--panel-quote-close-from/-to`
+exists to prioritise exactly those, because without them no delta is
+identified no matter how much of 2026 is collected.
+
 ## Quickstart
 
 Requirements: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
@@ -147,7 +155,7 @@ Requirements: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone https://github.com/Vladosyna/kalshi-makers-takers-replication && cd kalshi-makers-takers-replication
 uv sync
-uv run pytest                # 309 tests, no network required
+uv run pytest                # 385 tests, no network required
 uv run kmt --help
 uv run kmt step-zero         # hard gate -- re-verify before any fresh fetch
 ```
@@ -172,6 +180,32 @@ instructions, and registers nothing on its own. Read
 | `kmt r3-check` | R3 firewall gate: refuses to proceed unless R2's verdict is already locked |
 | `kmt escalate` | Escalation decision (replication note vs. standalone paper), bound to the pre-registered delta_bar tests |
 | `kmt report` | Assemble the final report/note |
+
+### Running the long fetches
+
+Both passes take hours to days against the real universe, so launch them
+**detached from whatever shell started them** — a fetch parented to an
+interactive session dies with that session, silently and with nothing in the
+log but an abrupt stop mid-request (observed 2026-07-28: seven hours of work
+ended with no traceback, no error line, no summary). On Windows:
+
+```powershell
+Start-Process -FilePath .\.venv\Scripts\kmt.exe `
+  -ArgumentList 'fetch','pass1','--max-series','0','--panel-quote-window','r2',
+                '--panel-quote-close-from','2025-05-01','--panel-quote-close-to','2025-12-31' `
+  -WorkingDirectory (Get-Location) -WindowStyle Hidden `
+  -RedirectStandardError data\logs\pass1.log -RedirectStandardOutput data\logs\pass1.out.log
+```
+
+Nothing is lost when a run does die: every phase is resumable from its own
+checkpoint, and the panel/quote phase's resume predicate is `ticker NOT IN
+quotes` — the row that `fetch_closing_quote` writes last and always, even when
+no quote is retrievable. That last part is what makes "no work left" a
+decidable question (`eligible == quoted`) rather than a coverage ratio that
+structural gaps would keep below 100% forever. A restart-on-crash watchdog
+should key on that count, not on the ratio, and should also treat a stalled
+log as a hang: the process tree is `kmt.exe → python.exe → python.exe`, so a
+wedged worker can leave the top-level process alive.
 
 ## Analysis discipline
 
