@@ -181,7 +181,19 @@ BDW's own sentence is confirmed in direction and sharpened: makers were free eve
 
 **Consequence for R1 (implemented).** R1's primary net-return figures are now priced with BDW's stated model explicitly (`fees/schedule.py:bdw_fee_model`), not with the sourced schedule, so that any gap against their Fig 5 is theirs to explain rather than an artifact of our fee model. The sourced schedule runs alongside as a reported sensitivity. The difference is itself a finding: the half-rate carve-out covers **18.3%** of R1's in-scope universe (7,266 markets) and 45 in-scope markets closed while the rate was 0.14. Neither appears in BDW's single-formula treatment. Gross returns and every ψ are untouched — fees enter only the net-return figures.
 
-**Consequence for R2 (design question, deliberately NOT resolved here).** §2.1's `δ_fee` is specified as a break at a single exchange-wide date. The artifacts say there was no exchange-wide fee change: in the window the first list was in force (2025-05-13 → 2025-09-17), the treated series are **5.3% of in-scope markets but 25.9% of traded volume**. So `δ_fee` as written estimates a break whose treatment reached a twentieth of the sample, and a null on it would be close to uninformative about fees.
+**Consequence for R2 (design question, deliberately NOT resolved here).** §2.1's `δ_fee` is specified as a break at a single exchange-wide date. The artifacts say there was no exchange-wide fee change: the fee reached an enumerated minority of series, and the size of that minority moved every time the list was revised. Measured on our own in-scope universe (`tools/measure_maker_fee_treatment.py`), with treatment read from `fees.yaml`'s dated lists:
+
+| Window | Treated markets | Treated volume |
+|---|---|---|
+| First list era, 2025-05-13 → 2025-07-07 | 8.0% | 61.0% |
+| All pre-October lists, 2025-05-13 → 2025-09-17 | 14.4% | 66.2% |
+| Whole R2 window | 4.5% | 41.6% |
+
+Monthly, the treated share of markets runs 5.5% (2025-05) → 9.4% → 17.6% → 14.5% → 32.0% → 33.5% (2025-10) → 22.9% → 16.7%, then decays through 2026 as the market count explodes.
+
+*(Correction, same day: an earlier draft of this addendum reported 5.3% / 25.9%. That was computed from the 29-series introductory list alone over a window that did not match the fee's effective date, and it understates the treatment on both margins. The figures above use the full dated schedule.)*
+
+So the treated set is a **minority of markets but a majority of volume** — and the MZ regression weights observations, not dollars, so what `δ_fee` actually sees is the market-count share: a step dummy applied to a sample most of whose observations were never treated, with treatment intensity that quadruples and then halves inside the window. A single break date is a poor description of that regardless of how the estimate comes out.
 
 The same fact supplies the remedy: treated and untreated series coexist in the same months, giving a within-venue control group and a genuine difference-in-differences for the fee question — stronger identification than the pre/post break the plan committed to, and partly immune to the composition problem of §2.3 because sports grows in both arms. Recording it here rather than adopting it silently: switching a primary estimand is a specification change, it is the author's call, and R2 cannot run until quote collection finishes anyway. Whichever is chosen, `δ_pub` is unaffected — publication *was* an exchange-wide event.
 
@@ -199,7 +211,9 @@ where `Now = 1` if the market's series carried a maker fee on the day it closed,
 
 `Now` is read from `data/fees.yaml` through the same `entry_for` lookup the net-return layers use, so the DiD and the fee layers cannot disagree about who was treated. Treatment is time-varying and staggered by construction, matching the five dated list revisions.
 
-**Why this rather than §2.1's `δ_fee`.** §2.1 tests a break at one exchange-wide date. There was no exchange-wide fee change: in the window the first list was in force, treated series were 5.3% of in-scope markets and 25.9% of volume. `δ_fee` therefore has almost no treatment behind it, while the DiD has a within-venue control group observed in the same months — which additionally absorbs the sports-composition shift §2.3 exists to handle, since sports grows in both arms.
+**Why this rather than §2.1's `δ_fee`.** §2.1 tests a break at one exchange-wide date, and there was no exchange-wide fee change. Two things follow from the treatment measurements in Addendum 2. First, the regression weights observations rather than dollars, so `δ_fee`'s post-dummy is applied to a sample in which only 8–14% of observations were ever treated in the relevant months. Second, and worse for a step dummy, treatment intensity is not a step: the treated share of markets runs 5.5% → 9.4% → 17.6% → 14.5% → 32.0% → 33.5% and back down, as Kalshi revised the list five times. The DiD instead compares treated and untreated series observed in the same months, which uses the variation the revisions actually created — and it additionally absorbs the sports-composition shift §2.3 exists to handle, since sports grows in both arms.
+
+Note what this argument does **not** claim: the fee was not economically marginal. By volume the treated series were 61% of the first-list era and 66% through 2025-09-17. The case against `δ_fee` is about what the estimator sees and how the treatment is shaped, not about the fee being small.
 
 **`δ_fee` is retained, computed, and written to the locked artifact unchanged.** Reporting only the new estimand would hide a specification change instead of recording one. Both appear in `reports/r2/verdict_lock.json`; the paper reports both and says which is primary and why.
 
