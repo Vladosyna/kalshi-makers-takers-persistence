@@ -105,11 +105,12 @@ def _market_to_row(
         "close_time": m.close_time, "close_time_epoch": close_epoch,
         "settlement_ts": m.settlement_ts, "volume_fp": m.volume_fp, "metadata_source": source,
         "in_r1_window": in_r1, "in_r2_window": in_r2,
-        # Not yet consumed by r1/filters.py's 63-mismatch check -- CLAUDE.md's
-        # own placeholder inventory still lists the exact settlement-price
-        # field as unpinned. Captured now (2026-07-21 audit) so the data
-        # exists once that pin is made, rather than needing a metadata
-        # re-fetch of the whole universe later.
+        # Captured 2026-07-21 as groundwork; consumed since 2026-07-28.
+        # settlement_value_dollars drives r1/filters.py's
+        # settlement-consistency check, last_price_dollars backs its
+        # tape-validation statistic. Capturing them during discovery is what
+        # made both possible without re-fetching metadata for the whole
+        # universe once the pin was finally made.
         "settlement_value_dollars": m.settlement_value_dollars,
         "last_price_dollars": m.last_price_dollars,
     }

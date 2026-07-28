@@ -50,11 +50,13 @@ CREATE TABLE IF NOT EXISTS markets (
 -- persist either). Added via _ensure_column below (not this
 -- CREATE-IF-NOT-EXISTS block) since the table already existed with real
 -- data before this migration -- ADD COLUMN is the only safe path on a
--- populated table. Not yet consumed by r1/filters.py's 63-mismatch check:
--- CLAUDE.md's own placeholder inventory still lists "exact
--- settlement-price field behind the 63-mismatch filter" as unpinned, so
--- this is groundwork (capture the data now so it exists when that pin is
--- made), not a redefinition of the filter.
+-- populated table. Both are consumed since 2026-07-28:
+-- settlement_value_dollars drives filters.py's settlement-consistency
+-- check (the one unambiguous data error the public fields expose), and
+-- last_price_dollars backs the validation statistic that 95.7% of our
+-- tape-derived closing prices match Kalshi's own final price to the cent.
+-- Neither reproduces BDW's 63-contract mismatch filter; filters.py's
+-- module docstring records why, with the measurements.
 CREATE INDEX IF NOT EXISTS idx_markets_close_time ON markets(close_time_epoch);
 CREATE INDEX IF NOT EXISTS idx_markets_series ON markets(series_ticker);
 CREATE INDEX IF NOT EXISTS idx_markets_r1 ON markets(in_r1_window);
@@ -198,7 +200,7 @@ CREATE TABLE IF NOT EXISTS universe_log (
                                 -- | 'spread_filter_not_computable' (structural: Pass 1
                                 --   tried live+historical and Kalshi has no bid/ask here)
                                 -- | 'missing_open_or_close_time' | 'open_below_24h'
-                                -- | 'settlement_last_trade_mismatch'
+                                -- | 'settlement_contradicts_result'
 );
 CREATE INDEX IF NOT EXISTS idx_universe_log_ticker ON universe_log(ticker);
 CREATE INDEX IF NOT EXISTS idx_universe_log_reason ON universe_log(reason_code);

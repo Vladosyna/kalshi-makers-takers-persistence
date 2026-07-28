@@ -1,17 +1,48 @@
-"""R1 filters (spec S1): volume>=$1k, spread<=20c, open>=24h, and the
-63-mismatch settlement-vs-last-trade check. Operates on markets already
-discovered by Pass 1 (store/db.py's markets/quotes/price_panel tables),
-restricted to the R1 window (2021-01-01..2025-04-30).
+"""R1 filters (spec S1): volume>=$1k, spread<=20c, open>=24h, and a
+settlement-consistency check. Operates on markets already discovered by Pass 1
+(store/db.py's markets/quotes/price_panel tables), restricted to the R1 window
+(2021-01-01..2025-04-30).
 
-Judgment call, documented rather than silently guessed (spec's own
-placeholder: "pin the exact field behind 'separately-reported' during
-implementation -- settlement price vs last price"): the 63-mismatch check
-compares Kalshi's own authoritative `result` field (categorical yes/no --
-Kalshi's settlement determination) against the price panel's closing-day
-last-trade price rounded to an implied side (yes_price>=0.5 implies "yes"
-will win, else "no"). A mismatch is a contract whose very last trade implied
-the opposite of how it actually settled -- exactly BDW's own "dropped for
-mismatch" construction, without needing a second endpoint.
+THE 63-MISMATCH FILTER CANNOT BE REPRODUCED, and that is a finding rather than
+a gap to paper over (re-pinned 2026-07-28; the spec's own placeholder asked for
+"the exact field behind 'separately-reported' -- settlement price vs last
+price"). BDW drop 63 of 46,282 Yes contracts, 0.136%, "for mismatch vs Kalshi's
+separately-reported final prices". Every reading available from Kalshi's public
+fields was measured against that rate on our own R1 universe
+(`tools/measure_mismatch_filter.py`):
+
+    reading                                          rate      vs BDW
+    proxy: result vs side implied by last trade      0.000%     never fires
+    tape day-0 price vs Kalshi last_price, >=1c      4.345%     32x too many
+    ...same, >25c                                    0.090%     0.7x (arbitrary threshold)
+    settlement value vs result                       0.003%     45x too few
+
+The proxy is what this module used until now, and it is INERT: it asks whether
+the final trade landed on the winning side, and by the close a market's price
+has already converged to its outcome, so it fired zero times in 25,803
+contracts. It never removed anything, and it never would.
+
+The price comparison is the closest in spirit but does not survive scrutiny as
+a filter: the two quantities differ by DEFINITION (our "last trade at or before
+close_time" against Kalshi's own last-price snapshot), so a disagreement is not
+evidence of an error, and only an arbitrary threshold brings its rate near
+BDW's. Tuning that threshold to land on 63 would be fitting a filter whose
+definition we do not know to a number we do.
+
+What IS implemented is the one unambiguous data error available: Kalshi's own
+separately-reported SETTLEMENT VALUE contradicting its own `result` for the
+same contract. Binary, no tolerance, no judgment. It catches 1 contract in
+32,728.
+
+So we retain contracts BDW dropped. At 0.136% of their sample that difference
+cannot move any reported quantity, and it is logged as a divergence rather than
+hidden -- see DIVERGENCE_NOTES and docs/r1_reproduction_findings.md.
+
+The price comparison is kept, but as a VALIDATION rather than a filter, and it
+is a strong one: 95.7% of our tape-derived closing prices match Kalshi's
+independently reported final price to the cent, with the median, p90 and p95
+differences all exactly 0.0000. That is independent evidence that the tape
+reconstruction is right.
 """
 
 from __future__ import annotations
@@ -115,10 +146,17 @@ class FilterResult:
     reason_codes: list[str] = field(default_factory=list)
 
 
-def _implied_side(yes_price: float | None) -> str | None:
-    if yes_price is None:
-        return None
-    return "yes" if yes_price >= 0.5 else "no"
+def _settlement_contradicts_result(result: str | None, settlement_value: float | None) -> bool:
+    """Kalshi's own separately-reported settlement value disagreeing with its
+    own categorical `result` for the same contract. Settlement is binary in
+    this universe (measured: 24,124 rows at 0.0 and 8,604 at 1.0, nothing
+    else), so 'contradicts' is unambiguous and needs no tolerance.
+
+    Unknowable rather than false when either field is missing: a contract we
+    cannot check is not a contract we have caught out."""
+    if result not in ("yes", "no") or settlement_value is None:
+        return False
+    return (result == "yes") != (float(settlement_value) >= 0.5)
 
 
 def apply_r1_filters(
@@ -179,6 +217,7 @@ def apply_r1_filters(
     rows = conn.execute(
         f"""
         SELECT m.ticker, m.volume_fp, m.open_time_epoch, m.close_time_epoch, m.result,
+               m.settlement_value_dollars,
                q.spread, (q.ticker IS NOT NULL) AS quote_attempted,
                p.status AS pass2_status
         FROM markets m
@@ -187,13 +226,6 @@ def apply_r1_filters(
         WHERE m.{window_column} = 1
         """
     ).fetchall()
-
-    day0_price = {
-        r["ticker"]: r["yes_price_dollars"]
-        for r in conn.execute(
-            "SELECT ticker, yes_price_dollars FROM price_panel WHERE lookback_day = 0"
-        ).fetchall()
-    }
 
     results = []
     for row in rows:
@@ -217,10 +249,8 @@ def apply_r1_filters(
             reasons.append("open_below_24h")
         if row["result"] not in ("yes", "no"):
             reasons.append("result_missing_or_invalid")
-        else:
-            implied = _implied_side(day0_price.get(row["ticker"]))
-            if implied and row["result"] != implied:
-                reasons.append("settlement_last_trade_mismatch")
+        elif _settlement_contradicts_result(row["result"], row["settlement_value_dollars"]):
+            reasons.append("settlement_contradicts_result")
         results.append(FilterResult(ticker=row["ticker"], passed=not reasons, reason_codes=reasons))
     return results
 

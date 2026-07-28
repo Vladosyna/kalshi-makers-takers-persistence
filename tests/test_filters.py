@@ -11,10 +11,16 @@ from kalshi_mt.store import db
 
 
 def _seed(conn, ticker, *, volume_fp=2000.0, spread=0.05, open_epoch=0,
-          close_epoch=2 * 86400, result="yes", day0_price=0.9, in_r1=1, with_quote=True):
+          close_epoch=2 * 86400, result="yes", day0_price=0.9, in_r1=1, with_quote=True,
+          settlement_value=None):
+    # settlement_value defaults to whatever `result` says, so a test that does
+    # not care about the settlement-consistency check never trips it.
+    if settlement_value is None and result in ("yes", "no"):
+        settlement_value = 1.0 if result == "yes" else 0.0
     db.upsert_market(conn, {
         "ticker": ticker, "volume_fp": volume_fp, "open_time_epoch": open_epoch,
         "close_time_epoch": close_epoch, "result": result, "in_r1_window": in_r1,
+        "settlement_value_dollars": settlement_value,
     })
     if with_quote:
         db.upsert_quote(conn, {
@@ -94,19 +100,44 @@ def test_exactly_24h_passes_the_duration_check(tmp_path):
     assert "open_below_24h" not in r.reason_codes
 
 
-def test_settlement_mismatch_detected(tmp_path):
+def test_settlement_value_contradicting_result_is_dropped(tmp_path):
+    """Kalshi's own settlement value disagreeing with its own `result` for the
+    same contract -- the one unambiguous data error the public fields expose,
+    and what replaced the inert last-trade proxy on 2026-07-28."""
     conn = db.connect(tmp_path / "t.db")
-    # last trade implied "yes" (price 0.9) but the market actually settled "no"
-    _seed(conn, "MISMATCH", result="no", day0_price=0.9)
+    _seed(conn, "CONTRADICTS", result="yes", settlement_value=0.0)
     r = apply_r1_filters(conn)[0]
-    assert "settlement_last_trade_mismatch" in r.reason_codes
+    assert r.passed is False
+    assert "settlement_contradicts_result" in r.reason_codes
+
+
+def test_a_losing_final_trade_is_not_a_mismatch(tmp_path):
+    """An upset is not a data error. The proxy this replaced would have called
+    a contract whose last trade sat on the losing side a mismatch; on a
+    favorite-longshot-bias paper that is precisely the wrong thing to drop."""
+    conn = db.connect(tmp_path / "t.db")
+    _seed(conn, "UPSET", result="no", day0_price=0.9)
+    r = apply_r1_filters(conn)[0]
+    assert r.passed is True
+    assert r.reason_codes == []
+
+
+def test_missing_settlement_value_is_not_treated_as_a_contradiction(tmp_path):
+    conn = db.connect(tmp_path / "t.db")
+    _seed(conn, "NO-SETTLE", result="yes", settlement_value=0.0)
+    _seed(conn, "UNKNOWN", result="yes")
+    conn.execute("UPDATE markets SET settlement_value_dollars = NULL WHERE ticker = 'UNKNOWN'")
+    conn.commit()
+    by_ticker = {r.ticker: r for r in apply_r1_filters(conn)}
+    assert "settlement_contradicts_result" in by_ticker["NO-SETTLE"].reason_codes
+    assert by_ticker["UNKNOWN"].reason_codes == []
 
 
 def test_settlement_agreement_not_flagged(tmp_path):
     conn = db.connect(tmp_path / "t.db")
     _seed(conn, "AGREE", result="yes", day0_price=0.95)
     r = apply_r1_filters(conn)[0]
-    assert "settlement_last_trade_mismatch" not in r.reason_codes
+    assert "settlement_contradicts_result" not in r.reason_codes
 
 
 def test_missing_result_flagged_as_visible_exclusion(tmp_path):
@@ -121,14 +152,14 @@ def test_missing_result_flagged_as_visible_exclusion(tmp_path):
     r = apply_r1_filters(conn)[0]
     assert r.passed is False
     assert "result_missing_or_invalid" in r.reason_codes
-    assert "settlement_last_trade_mismatch" not in r.reason_codes
+    assert "settlement_contradicts_result" not in r.reason_codes
 
 
 def test_no_price_panel_row_does_not_trigger_mismatch(tmp_path):
     conn = db.connect(tmp_path / "t.db")
     _seed(conn, "NOPANEL", result="yes", day0_price=None)
     r = apply_r1_filters(conn)[0]
-    assert "settlement_last_trade_mismatch" not in r.reason_codes
+    assert "settlement_contradicts_result" not in r.reason_codes
 
 
 # ---------------------------------------------------------------------------

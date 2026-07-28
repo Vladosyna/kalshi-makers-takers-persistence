@@ -314,7 +314,50 @@ structurally uncomputable) off 44,946 at the volume stage. For BDW to report
 46,282 *after* those same filters, their spread and duration filters must have
 bitten far less than ours — which for the spread half is exactly 4.1.
 
-### 4.3 Maker/taker — RESOLVED 2026-07-27, see §1.5
+### 4.3 The 63-contract mismatch filter does not reproduce
+
+BDW drop **63 of 46,282 Yes contracts (0.136%)** "for mismatch vs Kalshi's
+separately-reported final prices". The spec left the field behind
+"separately-reported" as an explicit implementation pin. Measured against every
+reading Kalshi's public fields allow (`tools/measure_mismatch_filter.py`), on
+our own R1 universe:
+
+| Reading | Rate | vs BDW |
+|---|---|---|
+| Proxy in use until 2026-07-28: `result` vs the side implied by the last trade | 0.000% | never fires |
+| Tape day-0 price vs Kalshi's `last_price`, ≥1c | 4.345% | 32× too many |
+| …same, >25c | 0.090% | 0.7×, threshold arbitrary |
+| Settlement value vs `result` | 0.003% | 45× too few |
+
+The proxy was **inert**, and for a structural reason: by the close a market's
+price has converged to its outcome, so "the last trade landed on the losing
+side" essentially never happens — 0 hits in 25,803 contracts. Worth noting what
+it *would* have caught had it fired, namely upsets, which on a
+favorite-longshot-bias paper are the observations under study rather than data
+errors.
+
+The price comparison is closest in spirit but does not survive as a filter: our
+"last trade at or before close_time" and Kalshi's own last-price snapshot differ
+**by definition**, so disagreement is not evidence of error, and only an
+arbitrary threshold brings the rate near BDW's. Choosing that threshold to land
+on 63 would fit a filter whose definition we do not know to a number we do.
+
+**What is implemented** is the one unambiguous data error available: Kalshi's
+own settlement value contradicting its own `result` for the same contract. It
+catches **1 contract in 32,728**.
+
+**So we retain contracts BDW dropped.** At 0.136% of their sample the difference
+cannot move any reported quantity, and it is recorded here rather than papered
+over.
+
+**The price comparison survives as a validation, and a strong one:** 95.7% of
+our tape-derived closing prices match Kalshi's independently reported final
+price **to the cent**, with median, p90 and p95 differences all exactly 0.0000.
+Two independently produced series agreeing that closely is evidence the tape
+reconstruction is right — a better use for the comparison than a filter it
+cannot support.
+
+### 4.4 Maker/taker — RESOLVED 2026-07-27, see §1.5
 
 Was the largest open divergence; resolved by reading the primary PDF rather than
 by further inference. Kept below for the record of what was ruled out, because
@@ -336,7 +379,7 @@ makers were fee-exempt while takers paid the 0.07·P·(1−P) order-total formul
 Part of the headline gap is the fee, not behaviour — so the fee asymmetry has to
 be in the code, and now is.
 
-### 4.3b What had been ruled out first (retained for the record)
+### 4.4b What had been ruled out first (retained for the record)
 
 | | Maker | Taker |
 |---|---|---|
