@@ -1,6 +1,6 @@
 # Analysis Plan
 
-**Committed:** 2026-07-16 (UTC). **Status:** primary document. §1–§6 unchanged since commitment; see §7 Addendum 1 (2026-07-28) for the construction re-pins forced by R1's reproduction, all made before any R2 estimate existed.
+**Committed:** 2026-07-16 (UTC). **Status:** primary document. §1–§6 unchanged since commitment; see §7 Addendum 1 (2026-07-28) for the construction re-pins forced by R1's reproduction and Addendum 2 (2026-07-28) for the fee schedule sourced from primary artifacts — all made before any R2 estimate existed.
 
 This document expands `Claude.md` (v1.1) §2/§4/§5 into exact equations, thresholds, and inequalities, committed once, before any R2 estimate is computed — per the spec's own requirement ("Commit `docs/analysis_plan.md` ... BEFORE computing any R2 estimate") and this repo's honesty framing: historical data means this is **specification commitment**, not outcome-blind pre-registration. R3 (§4 below) is the only genuinely prospective arm. Any later change is appended as a dated addendum (§7), never a silent rewrite of §1–§6 — the same append-only discipline the sibling lab's `docs/pre_analysis_plan.md` follows.
 
@@ -155,7 +155,34 @@ Why an addendum rather than an edit: R1's reproduction showed BDW's prose underd
 
 **6. Fee-boundary precision — a disclosed limitation, not a change.** The source paper says only that "Kalshi began to charge fees on Makers after April 2025", with no date and no rate. `data/fees.yaml`'s 2025-05-01 therefore stands as an operationalization of that sentence, and the 0.0175 maker rate does **not** come from the paper and remains unconfirmed against a primary artifact. §3's three fee layers and §3.3's break-even ribbon are unchanged; the ribbon is what carries this uncertainty, and the "fragile" rule in §3.3 continues to withhold escalation where a margin's sign flips inside the plausible band. The paper *does* confirm the taker formula verbatim — `$0.07·P(1−P)`, order total rounded up to the nearest cent — which is what §3.1 and the implementation use.
 
-**Unresolved dependencies, recorded so their absence is not discovered at write-up:**
+**Unresolved dependencies as of Addendum 1, recorded so their absence is not discovered at write-up:**
 
 - **Polymarket control venue (§2.4).** The SII-WANGZJ archive carries no category column, so the Polymarket→Kalshi strata mapping §2.4 calls for cannot be built from it as it stands. §2.4's caveats already deny this arm identifying power; if the mapping proves impossible the overlay is reported at venue level only, and that limitation is stated in the paper rather than quietly dropped.
 - **R2 quote coverage.** As of this addendum, quotes exist for only 2 of R2's 14 months (2026-05, 2026-06); the months bracketing the publication boundary are not yet fetched. No δ can be computed until they are. This is a collection gap, not a specification change, and it is being closed before §2.1 is run.
+
+### Addendum 2 — the fee schedule, sourced from primary artifacts (committed 2026-07-28, UTC)
+
+**Still before any R2 estimate.** `reports/r2/` does not exist and no δ has been computed. Nothing below was learned from outcome data: every fact comes from documents Kalshi published, and the design consequence follows from what those documents *say the treatment was*, not from how any estimate came out. §1–§6 remain unchanged.
+
+**This supersedes Addendum 1 item 6**, which recorded the maker fee's date and rate as unconfirmed and carried the uncertainty in §3.3's ribbon. They are now sourced, and the sourcing changed more than the two numbers.
+
+**Evidence.** 16 dated captures of `kalshi.com/docs/kalshi-fee-schedule.pdf` spanning 2021-07 → 2026-02, archived in `docs/sources/fees/` with the parse in `version_history.json` (`tools/fetch_fee_schedule_history.py`); plus per-series `fee_type`/`fee_multiplier` for all 12,231 series from Kalshi's API, frozen in `data/series_fee_catalog.json` (`tools/fetch_series_fee_catalog.py`). `data/fees.yaml` is now generated from those two inputs by `tools/build_fees_yaml.py` and is no longer hand-written.
+
+**What the artifacts say, against what the plan assumed:**
+
+| | Assumed | Sourced |
+|---|---|---|
+| Maker fee, effective | 2025-05-01, read off BDW's "after April 2025" | **2025-05-13**, the document's own "Last Updated" stamp |
+| Maker fee, form | `0.0175·C·P·(1−P)` | first **`round up(0.0025 · C)`** — flat per contract, no price dependence — becoming the quadratic 0.0175 form on **2025-07-08** |
+| Maker fee, scope | exchange-wide | **an enumerated list of series**: 29 at introduction, 39 from 2025-06-05, 48 from 2025-07-08, 101 from 2025-09-02, 111 from 2025-09-17 |
+| Taker fee | 0.07 throughout | 0.07 from 2021-08-01, but **0.14** in the 2021-07-20 capture, and **0.035** for S&P500 (`INX*`) and Nasdaq-100 (`NASDAQ100*`) markets in every capture from 2022-09 on |
+
+BDW's own sentence is confirmed in direction and sharpened: makers were free everywhere until 2025-05-13, which is after their 2025-04-30 cutoff. Their uniform `0.07·P(1−P)` is confirmed verbatim as the *general* rate.
+
+**Consequence for R1 (implemented).** R1's primary net-return figures are now priced with BDW's stated model explicitly (`fees/schedule.py:bdw_fee_model`), not with the sourced schedule, so that any gap against their Fig 5 is theirs to explain rather than an artifact of our fee model. The sourced schedule runs alongside as a reported sensitivity. The difference is itself a finding: the half-rate carve-out covers **18.3%** of R1's in-scope universe (7,266 markets) and 45 in-scope markets closed while the rate was 0.14. Neither appears in BDW's single-formula treatment. Gross returns and every ψ are untouched — fees enter only the net-return figures.
+
+**Consequence for R2 (design question, deliberately NOT resolved here).** §2.1's `δ_fee` is specified as a break at a single exchange-wide date. The artifacts say there was no exchange-wide fee change: in the window the first list was in force (2025-05-13 → 2025-09-17), the treated series are **5.3% of in-scope markets but 25.9% of traded volume**. So `δ_fee` as written estimates a break whose treatment reached a twentieth of the sample, and a null on it would be close to uninformative about fees.
+
+The same fact supplies the remedy: treated and untreated series coexist in the same months, giving a within-venue control group and a genuine difference-in-differences for the fee question — stronger identification than the pre/post break the plan committed to, and partly immune to the composition problem of §2.3 because sports grows in both arms. Recording it here rather than adopting it silently: switching a primary estimand is a specification change, it is the author's call, and R2 cannot run until quote collection finishes anyway. Whichever is chosen, `δ_pub` is unaffected — publication *was* an exchange-wide event.
+
+**Remaining gap, carried explicitly.** From the 2025-10-01 version Kalshi removed the series list from the PDF and deferred to `kalshi.com/fee-schedule`, which is client-rendered and whose Wayback captures are empty shells. Per-series scope for 2025-10-01 → 2026-06-30 is therefore not directly observable. The two dated endpoints are **not nested** — 6 series left the list on 2025-09-17 and 8 more are absent from today's catalog, while 27 joined — so `fees.yaml` records evidence bounds, not logical ones: 103 series in both (primary), 138 in either. §3.3's ribbon is what carries the span, and §3.3's "fragile" rule continues to withhold escalation where a margin's sign flips inside it.

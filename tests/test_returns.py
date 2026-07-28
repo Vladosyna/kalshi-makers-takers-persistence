@@ -9,12 +9,24 @@ from kalshi_mt.fees.returns import (
 )
 
 
+MAKER_FEE_SERIES = "KXNBA"
+
+
 def _schedule():
+    """Deliberately NOT the shipped data/fees.yaml: these tests are about the
+    return convention's arithmetic, so the schedule is kept to the minimum
+    that exercises a zero and a nonzero fee. The maker fee is series-scoped,
+    as the real one is -- calls that expect a maker fee must say which
+    series."""
     return {
+        "version": 2,
         "schedule": [
-            {"effective_from": "2022-09-22", "role": "taker", "category": "default", "rate": 0.07},
-            {"effective_from": "2022-09-22", "role": "maker", "category": "default", "rate": 0.0},
-            {"effective_from": "2025-05-01", "role": "maker", "category": "default", "rate": 0.0175},
+            {"effective_from": "2022-09-22", "role": "taker", "form": "quadratic",
+             "rate": 0.07, "scope": {"kind": "all"}},
+            {"effective_from": "2022-09-22", "role": "maker", "form": "none",
+             "rate": 0.0, "scope": {"kind": "all"}},
+            {"effective_from": "2025-07-08", "role": "maker", "form": "quadratic",
+             "rate": 0.0175, "scope": {"kind": "series", "series": [MAKER_FEE_SERIES]}},
         ],
     }
 
@@ -36,20 +48,20 @@ def test_net_return_matches_hand_computation():
     s = _schedule()
     # taker, C=100, P=0.5, payout=1.0: fee_usd = ceil(0.07*100*0.5*0.5*100)/100 = 1.75
     # fee_per_contract = 0.0175; r = (1.0 - 0.5 - 0.0175) / 0.5 = 0.965
-    r = net_return(s, "taker", None, 100.0, 1.0, 0.5, "2023-01-01")
+    r = net_return(s, "taker", 100.0, 1.0, 0.5, "2023-01-01")
     assert abs(r - 0.965) < 1e-9
 
 
 def test_net_return_none_on_fee_schedule_gap():
     s = _schedule()
-    r = net_return(s, "taker", None, 100.0, 1.0, 0.5, "2021-01-01")
+    r = net_return(s, "taker", 100.0, 1.0, 0.5, "2021-01-01")
     assert r is None
 
 
 def test_net_return_always_worse_than_gross_for_a_positive_fee():
     s = _schedule()
     gross = gross_return(1.0, 0.5)
-    net = net_return(s, "taker", None, 100.0, 1.0, 0.5, "2023-01-01")
+    net = net_return(s, "taker", 100.0, 1.0, 0.5, "2023-01-01")
     assert net < gross
 
 
@@ -62,19 +74,19 @@ def test_counterfactual_uses_pre_boundary_schedule_for_a_post_boundary_trade():
     # A trade actually filled in 2026 (post maker-fee introduction), as a
     # MAKER -- its real net return would use the 0.0175 maker rate, but the
     # counterfactual must use the PRE-2025-05 rate (0.0 for makers).
-    real_net = net_return(s, "maker", None, 100.0, 1.0, 0.5, "2026-01-01")
-    counterfactual = counterfactual_return(s, "maker", None, 100.0, 1.0, 0.5)
+    real_net = net_return(s, "maker", 100.0, 1.0, 0.5, "2026-01-01", series_ticker=MAKER_FEE_SERIES)
+    counterfactual = counterfactual_return(s, "maker", 100.0, 1.0, 0.5, series_ticker=MAKER_FEE_SERIES)
     assert real_net < counterfactual  # real return is worse (fee-bearing); counterfactual is fee-free
     assert counterfactual == gross_return(1.0, 0.5)  # maker fee was 0 pre-boundary -> counterfactual == gross
 
 
 def test_counterfactual_uses_fixed_date_not_trade_date():
     s = _schedule()
-    c1 = counterfactual_return(s, "maker", None, 100.0, 1.0, 0.5)
+    c1 = counterfactual_return(s, "maker", 100.0, 1.0, 0.5, series_ticker=MAKER_FEE_SERIES)
     # Same call again -- COUNTERFACTUAL_AS_OF is a module constant, not a
     # parameter, so this is trivially stable; the real assertion is that it
     # matches a direct net_return call pinned to that exact date.
-    c2 = net_return(s, "maker", None, 100.0, 1.0, 0.5, COUNTERFACTUAL_AS_OF)
+    c2 = net_return(s, "maker", 100.0, 1.0, 0.5, COUNTERFACTUAL_AS_OF, series_ticker=MAKER_FEE_SERIES)
     assert c1 == c2
 
 
@@ -84,15 +96,15 @@ def test_counterfactual_uses_fixed_date_not_trade_date():
 
 def test_three_layer_return_bundles_all_three():
     s = _schedule()
-    layers = three_layer_return(s, "taker", None, 100.0, 1.0, 0.5, "2023-01-01")
+    layers = three_layer_return(s, "taker", 100.0, 1.0, 0.5, "2023-01-01")
     assert layers.gross == gross_return(1.0, 0.5)
-    assert layers.net == net_return(s, "taker", None, 100.0, 1.0, 0.5, "2023-01-01")
-    assert layers.counterfactual == counterfactual_return(s, "taker", None, 100.0, 1.0, 0.5)
+    assert layers.net == net_return(s, "taker", 100.0, 1.0, 0.5, "2023-01-01")
+    assert layers.counterfactual == counterfactual_return(s, "taker", 100.0, 1.0, 0.5)
 
 
 def test_three_layer_return_net_none_propagates_cleanly():
     s = _schedule()
-    layers = three_layer_return(s, "taker", None, 100.0, 1.0, 0.5, "2021-01-01")
+    layers = three_layer_return(s, "taker", 100.0, 1.0, 0.5, "2021-01-01")
     assert layers.gross is not None
     assert layers.net is None
 
@@ -117,7 +129,7 @@ def test_fee_impact_understated_by_roughly_20x_at_5c():
     fee_usd = (int(fee_usd * 100) + (1 if fee_usd * 100 % 1 > 1e-9 else 0)) / 100  # ceil to cent
     fee_per_contract = fee_usd / 100.0
 
-    correct = net_return(s, "taker", None, 100.0, 0.0, price, "2023-01-01")
+    correct = net_return(s, "taker", 100.0, 0.0, price, "2023-01-01")
     buggy = _buggy_return(0.0, price, fee_per_contract)
     correct_fee_impact = gross_return(0.0, price) - correct
     buggy_fee_impact = gross_return(0.0, price) - buggy
@@ -129,7 +141,7 @@ def test_fee_impact_understated_by_roughly_20x_at_5c():
 def test_fee_impact_understated_by_roughly_2x_at_50c():
     s = _schedule()
     price = 0.50
-    correct = net_return(s, "taker", None, 100.0, 0.0, price, "2023-01-01")
+    correct = net_return(s, "taker", 100.0, 0.0, price, "2023-01-01")
     fee_per_contract = 0.0175
     buggy = _buggy_return(0.0, price, fee_per_contract)
     correct_fee_impact = gross_return(0.0, price) - correct

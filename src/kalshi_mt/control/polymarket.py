@@ -365,6 +365,11 @@ def build_polymarket_panel(
             # control venue has no fee computation here, and the archive is
             # market-level rather than fill-level, so there is nothing to put.
             "count_fp": None, "taker_outcome_side": None,
+            # Kalshi's series taxonomy has no Polymarket counterpart, and the
+            # maker-fee DiD it feeds is a Kalshi-only design. None here is the
+            # honest value; r2/did.py treats a null series as never-treated,
+            # which is exactly right for a venue with no Kalshi maker fee.
+            "series_ticker": None,
         })
 
     if not records:

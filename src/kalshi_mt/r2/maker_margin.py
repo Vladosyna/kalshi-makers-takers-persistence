@@ -5,13 +5,13 @@ sign between layers (a) and (c) AND survives the entire fee-sensitivity
 ribbon").
 
 WHY "margin" means the maker-vs-taker SPREAD, not the maker's own return:
-this repo's fee history (data/fees.yaml) has the taker rate constant at
-0.07 across every era, and the maker rate at 0.0 through 2025-04-30, then
-0.0175 from 2025-05-01. Layer (a) is gross/zero-fee for any trade; layer
-(c) is the pre-2025-05 schedule held constant and applied to post-2025
-trades (fees/returns.py's COUNTERFACTUAL_AS_OF). For a MAKER's own trade,
-layer (c) looks up the maker rate as of 2025-04-30 -- 0.0 -- which is
-IDENTICAL to layer (a)'s zero fee. So a maker's own average return can
+this repo's fee history (data/fees.yaml) has the general taker rate constant
+at 0.07 from 2021-08 onward, and NO maker fee anywhere before 2025-05-13.
+Layer (a) is gross/zero-fee for any trade; layer (c) is the pre-maker-fee
+schedule held constant and applied to later trades (fees/returns.py's
+COUNTERFACTUAL_AS_OF). For a MAKER's own trade, layer (c) looks up the maker
+rate as of 2025-05-12 -- 0.0 -- which is IDENTICAL to layer (a)'s zero fee.
+So a maker's own average return can
 never differ between layers (a) and (c): "the maker's own return" cannot
 change sign between them, which would make S5's trigger vacuous. The only
 reading under which the trigger is meaningful is margin = mean(maker
@@ -27,6 +27,12 @@ Per-trade role/payout logic (which side is maker vs taker, what the
 payout is) mirrors r1/reproduction.py's maker_taker_split exactly; the
 >=50c band check here is a simple `side_price >= 0.5` per side, not the
 10c-bucketing price_band() helper used elsewhere.
+
+The maker fee is scoped to an enumerated list of SERIES, so this module is
+handed a {ticker: series_ticker} map rather than the {ticker: category} map
+it used to take -- category never determined a Kalshi fee. A ticker absent
+from the map still gets a correct answer (zero maker fee, general taker
+rate); it simply cannot match a series-scoped entry.
 """
 
 from __future__ import annotations
@@ -79,7 +85,7 @@ def _margin(maker: list[float], taker: list[float]) -> float | None:
 def compute_maker_margin_ge_50c(
     trades: pl.DataFrame,
     resolutions: dict[str, str],
-    categories: dict[str, str | None],
+    series_by_ticker: dict[str, str | None],
     fee_schedule: dict[str, Any],
     in_scope_tickers: set[str],
 ) -> MakerMarginResult:
@@ -89,8 +95,8 @@ def compute_maker_margin_ge_50c(
     r1/reproduction.py's maker_taker_split), includes that side only if
     its own price is >= 0.50, determines maker/taker role from
     taker_outcome_side, and accumulates gross/net/counterfactual returns
-    per role. `resolutions` is {ticker: 'yes'|'no'}, `categories` is
-    {ticker: category-or-None} (looked up by the caller, e.g. from the
+    per role. `resolutions` is {ticker: 'yes'|'no'}, `series_by_ticker` is
+    {ticker: series_ticker-or-None} (looked up by the caller, e.g. from the
     markets table), `fee_schedule` is fees/schedule.py's loaded dict.
     """
     empty = MakerMarginResult(
@@ -126,7 +132,7 @@ def compute_maker_margin_ge_50c(
             continue
         if created_time is None:
             continue
-        category = categories.get(ticker)
+        series_ticker = series_by_ticker.get(ticker)
 
         payout_yes = 1.0 if result == "yes" else 0.0
         yes_role = "taker" if taker_side == "yes" else "maker"
@@ -140,8 +146,14 @@ def compute_maker_margin_ge_50c(
                 continue
 
             gross = gross_return(side_payout, side_price)
-            net = net_return(fee_schedule, side_role, category, count_fp, side_payout, side_price, created_time)
-            cf = counterfactual_return(fee_schedule, side_role, category, count_fp, side_payout, side_price)
+            net = net_return(
+                fee_schedule, side_role, count_fp, side_payout, side_price, created_time,
+                market_ticker=ticker, series_ticker=series_ticker,
+            )
+            cf = counterfactual_return(
+                fee_schedule, side_role, count_fp, side_payout, side_price,
+                market_ticker=ticker, series_ticker=series_ticker,
+            )
 
             if side_role == "maker":
                 maker_a.append(gross)

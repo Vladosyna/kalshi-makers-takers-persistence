@@ -184,3 +184,44 @@ def test_append_compacts_once_a_month_accumulates_enough_parts(tmp_path):
     # Compaction must not lose or duplicate anything.
     assert store.trade_count_by_ticker() == {"ABC-1": COMPACT_AT_PARTS + 2}
     assert list((tmp_path / "parquet").rglob("*.tmp")) == []
+
+
+def _epoch(iso: str) -> int:
+    from datetime import datetime, timezone
+
+    return int(datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+
+
+def test_last_trade_at_or_before_picks_the_latest_fill(tmp_path):
+    store = TradeStore(tmp_path / "parquet")
+    store.append([
+        _trade("t1", created_time="2022-12-30T10:00:00Z", yes_price_dollars=0.10),
+        _trade("t2", created_time="2022-12-30T11:00:00Z", yes_price_dollars=0.20),
+        _trade("t3", created_time="2022-12-30T12:00:00Z", yes_price_dollars=0.30),
+    ])
+    got = store.last_trade_at_or_before([("ABC-1", 0, _epoch("2022-12-30T11:30:00Z"))])
+    assert got[("ABC-1", 0)][0] == 0.20
+
+
+def test_last_trade_at_or_before_is_deterministic_when_fills_share_an_instant(tmp_path):
+    """A sweeping order fills against several resting orders at ONE timestamp,
+    across several price levels, so "the last trade at or before T" has no
+    unique answer unless the tie is broken explicitly. Left to the query
+    planner it was answered from parallel-scan order: measured on the real
+    tape, two runs put ~60 panel rows in different price bands. The rule is
+    smallest trade_id -- arbitrary, but fixed."""
+    store = TradeStore(tmp_path / "parquet")
+    store.append([
+        _trade("t_c", created_time="2022-12-30T11:00:00Z", yes_price_dollars=0.30),
+        _trade("t_a", created_time="2022-12-30T11:00:00Z", yes_price_dollars=0.10),
+        _trade("t_b", created_time="2022-12-30T11:00:00Z", yes_price_dollars=0.20),
+    ])
+    ref = [("ABC-1", 0, _epoch("2022-12-30T12:00:00Z"))]
+    answers = {store.last_trade_at_or_before(ref)[("ABC-1", 0)][0] for _ in range(5)}
+    assert answers == {0.10}, f"tie broken inconsistently: {answers}"
+
+
+def test_last_trade_at_or_before_returns_nothing_before_the_first_fill(tmp_path):
+    store = TradeStore(tmp_path / "parquet")
+    store.append([_trade("t1", created_time="2022-12-30T10:00:00Z")])
+    assert store.last_trade_at_or_before([("ABC-1", 0, _epoch("2022-12-30T09:00:00Z"))]) == {}

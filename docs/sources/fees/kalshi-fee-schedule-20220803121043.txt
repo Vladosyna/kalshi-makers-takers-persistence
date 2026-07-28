@@ -1,0 +1,50 @@
+Fee
+Schedule
+This document outlines all fees on 
+Kalshi’s exchange.
+1st iteration
+July 25th, 2021
+
+Kalshi charges a variable percentage fee on the expected earnings on an individual contract. Expected earnings 
+are calculated by multiplying the maximum potential earnings from the contract by the implied probability of you 
+making these earnings - or the price of the contract divided by $1. The fee charged for a trade is the variable 
+percentage per contract times the number of contracts in the trade, rounded up to the nearest cent. Please refer 
+to the fee table below for the most up to date fee rates. 
+We charge this fee only to “liquidity takers,” who place orders that match orders sitting on the orderbook to 
+complete a trade. We do not charge a fee to “liquidity makers” who place an order that rests on the orderbook 
+waiting to be matched.
+Trading Fees
+Page 1 of 3
+Fees
+There is no fee associated with ACH deposits from your bank account to your Kalshi account and a $2 fee for all 
+withdrawals from your Kalshi account to your linked bank account.
+Fees for wire transfers vary from bank to bank. Kalshi does not charge any additional fees for wire transfers. 
+Currently, only wire deposits are supported.
+ACH Fees
+Wire Fees
+Page 2 of 3Fees
+Price of 1 contract Fee for 1 contract Price for 100 contracts Fee for 100 contracts
+$0.01 $0.01 $1.00 $0.07
+$0.10 $0.01 $10.00 $0.63
+$0.35 $0.02 $35.00 $1.60
+$0.20 $0.02 $20.00 $1.12
+$0.45 $0.02 $45.00 $1.74
+$0.05 $0.01 $5.00 $0.34
+$0.15 $0.01 $15.00 $0.90
+$0.40 $0.02 $40.00 $1.68
+$0.25 $0.02 $25.00 $1.32
+$0.50 $0.02 $50.00 $1.75
+$0.30 $0.02 $30.00 $1.47
+$0.55 $0.02 $55.00 $1.74
+$0.60 $0.02 $60.00 $1.68
+Trading Fees Table
+Page 3 of 3Fees
+Price of 1 contract Fee for 1 contract Price for 100 contracts Fee for 100 contracts
+$0.65 $0.02 $65.00 $1.60
+$0.75 $0.02 $75.00 $1.32
+$0.99 $0.01 $99.00 $0.07
+$0.85 $0.01 $85.00 $0.90
+$0.70 $0.02 $70.00 $1.47
+$0.80 $0.02 $80.00 $1.12
+$0.90 $0.01 $90.00 $0.63
+$0.95 $0.01 $95.00 $0.34

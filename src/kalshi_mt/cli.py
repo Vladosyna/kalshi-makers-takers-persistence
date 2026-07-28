@@ -437,7 +437,7 @@ def r1() -> None:
     """R1 MZ regression + reproduction report: by-year/by-category psi vs
     BDW Tables 8-9, win-rate curve vs Fig 3, returns-by-band vs Fig 5,
     maker/taker split vs Fig 6/Table 10, divergence log."""
-    from kalshi_mt.fees.schedule import load_fee_schedule
+    from kalshi_mt.fees.schedule import bdw_fee_model, load_fee_schedule
     from kalshi_mt.r1.field_population import field_population_by_era
     from kalshi_mt.r1.panel import build_doubled_panel, build_yes_only_panel_backfilled
     from kalshi_mt.r1.regression import verify_two_way_equals_one_way_clustering
@@ -469,7 +469,13 @@ def r1() -> None:
         # sample than the gate that cleared them.
         yes_only = build_yes_only_panel_backfilled(conn, trade_store, in_scope)
         doubled = build_doubled_panel(yes_only)
-        fee_schedule = load_fee_schedule()
+        # PRIMARY fee model for R1 is BDW's own (uniform taker 0.07, makers
+        # free), so a gap against their Fig 5 is theirs to explain, not ours.
+        # The schedule Kalshi actually published runs as the sensitivity
+        # branch -- see bdw_fee_model's docstring for what differs and why it
+        # is reported rather than silently adopted.
+        fee_schedule = bdw_fee_model()
+        sourced_fee_schedule = load_fee_schedule()
 
         by_year = by_year_psi(yes_only)
         by_category = by_category_psi(yes_only)
@@ -509,6 +515,16 @@ def r1() -> None:
             "clustering_verification": clustering_check,
             "win_rate_by_band": win_rate_by_band(doubled),
             "returns_by_band": returns_by_band(yes_only, fee_schedule),
+            "sensitivity_sourced_fee_schedule": {
+                "note": (
+                    "Same panel, priced with Kalshi's own published fee schedule "
+                    "(data/fees.yaml) instead of BDW's uniform 0.07: adds the "
+                    "S&P500/Nasdaq-100 half rate (18.3% of in-scope markets) and "
+                    "the 0.14 rate in force until 2021-08-01."
+                ),
+                "returns_by_band": returns_by_band(yes_only, sourced_fee_schedule),
+                "maker_taker_split": maker_taker_split(doubled, sourced_fee_schedule),
+            },
             "maker_taker_split": mt_split,
             "taker_field_population_by_era": field_population,
             "divergence_log": str(log_path),
@@ -673,29 +689,38 @@ def r3_check() -> None:
         raise typer.Exit(code=1)
 
 
-def _sourced_maker_rate(fee_schedule: dict) -> float | None:
-    maker_default_rows = [
+def _charging_maker_rows(fee_schedule: dict) -> list[dict]:
+    """Maker rows that actually charge something: a nonzero rate under a form
+    other than `none`. Everything else is the zero-fee baseline row that has
+    been in force since 2021 and stays untouched by the ribbon."""
+    return [
         r for r in fee_schedule.get("schedule", [])
-        if r.get("role") == "maker" and r.get("category") == "default"
+        if r.get("role") == "maker" and r.get("form") != "none" and float(r.get("rate", 0.0)) != 0.0
     ]
-    if not maker_default_rows:
+
+
+def _sourced_maker_rate(fee_schedule: dict) -> float | None:
+    rows = _charging_maker_rows(fee_schedule)
+    if not rows:
         return None
-    return float(max(maker_default_rows, key=lambda r: r["effective_from"])["rate"])
+    return float(max(rows, key=lambda r: r["effective_from"])["rate"])
 
 
 def _maker_rate_schedule(base_schedule: dict, maker_rate: float) -> dict:
-    """A copy of base_schedule with every post-2025-05-01 maker/default
-    row's rate replaced by `maker_rate` -- sweeps the [VERIFY]-flagged
-    sourced maker rate (data/fees.yaml's own header) for the
-    fee-sensitivity ribbon (S3.3), leaving the taker rate (well-sourced,
-    no known revision) and the pre-boundary maker row (0.0, definitional --
-    "Kalshi began to charge fees on Makers after April 2025") untouched."""
+    """A copy of base_schedule with every CHARGING maker row's rate replaced
+    by `maker_rate` -- the fee-sensitivity ribbon's sweep (S3.3).
+
+    Each row keeps its own `form`: Kalshi's first maker fee was flat per
+    contract and only later became quadratic in price, so sweeping a single
+    rate across a form-agnostic schedule would silently re-price the
+    2025-05-13..2025-07-07 era under the wrong functional form. The taker
+    rows (well sourced, no revision found across 16 archived schedules) and
+    the zero-fee maker baseline are left alone."""
     import copy
 
     schedule = copy.deepcopy(base_schedule)
-    for row in schedule.get("schedule", []):
-        if row.get("role") == "maker" and row.get("effective_from", "") >= "2025-05-01":
-            row["rate"] = maker_rate
+    for row in _charging_maker_rows(schedule):
+        row["rate"] = maker_rate
     return schedule
 
 
@@ -735,27 +760,30 @@ def _compute_escalation(config: dict) -> dict:
                 "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r2')"
             ).fetchall()
         }
-        resolutions, categories = {}, {}
+        # series_ticker, not category: data/fees.yaml scopes the maker fee to
+        # an enumerated list of SERIES, and category never determined a Kalshi
+        # fee at all.
+        resolutions, series_by_ticker = {}, {}
         if r2_scope:
             placeholders = ",".join("?" * len(r2_scope))
             for row in conn.execute(
-                f"SELECT ticker, result, category FROM markets WHERE ticker IN ({placeholders})",
+                f"SELECT ticker, result, series_ticker FROM markets WHERE ticker IN ({placeholders})",
                 list(r2_scope),
             ).fetchall():
                 resolutions[row["ticker"]] = row["result"]
-                categories[row["ticker"]] = row["category"]
+                series_by_ticker[row["ticker"]] = row["series_ticker"]
     finally:
         conn.close()
 
     trades = trade_store.read_all()
-    maker_margin = compute_maker_margin_ge_50c(trades, resolutions, categories, fee_schedule, r2_scope)
+    maker_margin = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, fee_schedule, r2_scope)
 
     ribbon = None
     sourced_rate = _sourced_maker_rate(fee_schedule)
     if sourced_rate is not None and maker_margin.n_maker_b > 0 and maker_margin.n_taker_b > 0:
         def _margin_fn(rate: float) -> float:
             synthetic = _maker_rate_schedule(fee_schedule, rate)
-            swept = compute_maker_margin_ge_50c(trades, resolutions, categories, synthetic, r2_scope)
+            swept = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, synthetic, r2_scope)
             return swept.layer_b if swept.layer_b is not None else 0.0
 
         ribbon = compute_ribbon(_margin_fn, default_fee_grid(sourced_rate))

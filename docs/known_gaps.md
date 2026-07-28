@@ -1,3 +1,67 @@
+Gaps recorded in this file:
+
+1. **Maker-fee series membership, 2025-10-01 → 2026-06-30** — open, bounded, carried into the results as a range.
+2. **Live-sweep sub-window 1769072393-1782863999** — materially closed by a second, independent path.
+
+---
+
+# Known gap: maker-fee series membership after 2025-10-01
+
+**Status as of 2026-07-28: open, bounded, and carried explicitly rather than closed.**
+
+Kalshi's maker fee applies to an enumerated list of series, not to the exchange
+as a whole. Every archived fee schedule from the fee's introduction
+(2025-05-13) through the 2025-09-17 version prints that list in full. The
+**2025-10-01 version removed it**, replacing it with a pointer:
+
+> Please refer to https://kalshi.com/fee-schedule for up-to-date information on
+> which markets have maker fees
+
+That page is a client-rendered Next.js app: its Wayback captures are empty
+shells with no fee content, and it shows only today's state in any case. So for
+the last nine months of R2's window, which series were paying a maker fee on a
+given date is **not directly observable from any archived artifact**.
+
+## What bounds it
+
+Two dated endpoints exist:
+
+| | Date | Series |
+|---|---|---|
+| Last enumerated PDF | 2025-09-17 | 111 |
+| Kalshi API `fee_type` catalog (`data/series_fee_catalog.json`) | 2026-07-28 | 130 |
+
+They are **not nested**, so neither is a logical bound: 6 series left the list
+at 2025-09-17 itself, 8 more in the last PDF list are absent from today's
+catalog, and 27 in today's catalog are not in the last PDF list. What the two
+support jointly:
+
+- **103 series** appear in both — the primary scope `data/fees.yaml` uses for
+  this period;
+- **138 series** appear in either — the upper branch.
+
+A series that was treated only mid-gap and appears in neither endpoint would
+be missed by both. That residual is stated rather than bounded.
+
+## How it is carried
+
+`data/fees.yaml` records `scope_bounds_post_pdf: {lower, upper}` alongside the
+primary schedule. The fee-sensitivity ribbon (`docs/analysis_plan.md` §3.3)
+reports the span across the two, and §3.3's pre-registered "fragile" rule
+withholds escalation from any margin whose sign flips inside it. This is the
+mechanism the plan already committed to for exactly this kind of uncertainty;
+no new machinery was added for it.
+
+## What would close it
+
+A dated source for the series list between 2025-10-01 and 2026-06-30. Candidates
+not yet exhausted: Kalshi's CFTC self-certification filings for the relevant
+weeks (the filing index has more Kalshi org-rule entries than this pass read),
+and Kalshi's own regulatory-notices page. Neither has been checked for a
+per-series maker-fee list.
+
+---
+
 # Known gap: live-sweep sub-window 1769072393-1782863999
 
 **Status as of 2026-07-26: materially closed by a second, independent path.**

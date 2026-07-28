@@ -1,0 +1,35 @@
+Kalshi
+Fee
+Schedule
+This document outlines all fees on
+Kalshi’s exchange
+1st iteration
+July 25th, 2021
+Revised on Aug 18th, 2022
+
+Fees Page 1 of 3
+Trading fees
+Kalshi charges a percentage fee on the expected earnings on an individual contract. 
+Expected earnings are calculated by multiplying the implied probability of a contract paying 
+out by maximum potential earnings from the contract - or $1 minus the price of the contract. 
+The current fee charged for a trade in dollars is given by the following formula.
+fees = round up (0.07 × c × p × (1-p))
+p = the price of a contract in dollars (50 cents is 0.5)
+c = the number of contracts being traded
+round up rounds to the next cent
+We charge this fee only to “liquidity takers,” who place orders that match orders sitting on 
+the orderbook to complete a trade. We do not charge a fee to “liquidity makers” who place an 
+order that rests on the orderbook waiting to be matched. Please see the fee table on the 
+next page for examples.
+ACH Fees
+There is no fee associated with ACH deposits from your bank account to your Kalshi account 
+and a $2 fee for all withdrawals from your Kalshi account to your linked bank account.
+Wire Fees
+Fees for wire transfers vary from bank to bank. Kalshi does not charge any additional fees for 
+wire transfers. Currently, only wire deposits are supported.
+Kalshi
+Fees Page 2 of 3
+Kalshi
+Trading Fees Table
+Fees Page 3 of 3
+Kalshi

@@ -39,12 +39,22 @@ def _real_schedule():
     return load_fee_schedule()
 
 
+MAKER_FEE_SERIES = "KXNBA"
+
+
 def _minimal_schedule():
+    """Same shape as data/fees.yaml v2: the maker fee is series-scoped and the
+    tests name the series explicitly, because a fee that applies everywhere is
+    not the fee Kalshi actually charges."""
     return {
+        "version": 2,
         "schedule": [
-            {"effective_from": "2022-09-22", "role": "taker", "category": "default", "rate": 0.07},
-            {"effective_from": "2022-09-22", "role": "maker", "category": "default", "rate": 0.0},
-            {"effective_from": "2025-05-01", "role": "maker", "category": "default", "rate": 0.0175},
+            {"effective_from": "2022-09-22", "role": "taker", "form": "quadratic",
+             "rate": 0.07, "scope": {"kind": "all"}},
+            {"effective_from": "2022-09-22", "role": "maker", "form": "none",
+             "rate": 0.0, "scope": {"kind": "all"}},
+            {"effective_from": "2025-07-08", "role": "maker", "form": "quadratic",
+             "rate": 0.0175, "scope": {"kind": "series", "series": [MAKER_FEE_SERIES]}},
         ],
     }
 
@@ -56,13 +66,13 @@ def _minimal_schedule():
 
 def test_maker_layer_a_equals_layer_c_invariant():
     s = _minimal_schedule()
-    layers_pre = three_layer_return(s, "maker", None, 100.0, 1.0, 0.6, "2023-06-01T00:00:00Z")
+    layers_pre = three_layer_return(s, "maker", 100.0, 1.0, 0.6, "2023-06-01T00:00:00Z", series_ticker=MAKER_FEE_SERIES)
     assert layers_pre.gross == layers_pre.counterfactual
 
-    layers_post = three_layer_return(s, "maker", None, 100.0, 1.0, 0.6, "2026-01-01T00:00:00Z")
+    layers_post = three_layer_return(s, "maker", 100.0, 1.0, 0.6, "2026-01-01T00:00:00Z", series_ticker=MAKER_FEE_SERIES)
     assert layers_post.gross == layers_post.counterfactual
 
-    cf = counterfactual_return(s, "maker", None, 100.0, 1.0, 0.6)
+    cf = counterfactual_return(s, "maker", 100.0, 1.0, 0.6, series_ticker=MAKER_FEE_SERIES)
     assert cf == gross_return(1.0, 0.6)
 
 
@@ -76,11 +86,11 @@ def test_margin_layer_a_hand_computation():
     # one maker observation and one taker observation from a single trade.
     s = _minimal_schedule()
     resolutions = {"T1": "yes"}
-    categories = {"T1": "default"}
+    series_by_ticker = {"T1": MAKER_FEE_SERIES}
     trades = _df([
         _trade("t1", "T1", 0.50, "yes", "2023-01-01T00:00:00Z"),
     ])
-    result = compute_maker_margin_ge_50c(trades, resolutions, categories, s, {"T1"})
+    result = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, s, {"T1"})
 
     taker_return = (1.0 - 0.50) / 0.50  # yes side is taker, resolves yes
     maker_return = (0.0 - 0.50) / 0.50  # no side is maker, resolves loss
@@ -102,7 +112,7 @@ def test_margin_layer_a_hand_computation():
 def test_side_below_50c_excluded():
     s = _minimal_schedule()
     resolutions = {"T1": "yes"}
-    categories = {"T1": "default"}
+    series_by_ticker = {"T1": MAKER_FEE_SERIES}
 
     # Trade A: yes side (0.65) is maker and clears the band; no side (0.35,
     # taker) does not. Trade B: yes side (0.75) is taker and clears the
@@ -111,7 +121,7 @@ def test_side_below_50c_excluded():
         _trade("a", "T1", 0.65, "no", "2023-01-01T00:00:00Z"),
         _trade("b", "T1", 0.75, "yes", "2023-01-01T00:00:00Z"),
     ])
-    result = compute_maker_margin_ge_50c(trades, resolutions, categories, s, {"T1"})
+    result = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, s, {"T1"})
 
     assert result.n_maker_a == 1
     assert result.n_taker_a == 1
@@ -169,11 +179,11 @@ def test_empty_in_scope_tickers_returns_all_none():
 def test_fee_schedule_gap_excludes_only_b():
     s = _minimal_schedule()
     resolutions = {"T1": "yes"}
-    categories = {"T1": "default"}
+    series_by_ticker = {"T1": MAKER_FEE_SERIES}
     trades = _df([
         _trade("t1", "T1", 0.50, "yes", "2021-01-01T00:00:00Z"),
     ])
-    result = compute_maker_margin_ge_50c(trades, resolutions, categories, s, {"T1"})
+    result = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, s, {"T1"})
 
     assert result.n_maker_a == 1
     assert result.n_taker_a == 1
@@ -199,11 +209,11 @@ def test_fee_schedule_gap_excludes_only_b():
 def test_real_fee_schedule_loads_and_runs():
     s = _real_schedule()
     resolutions = {"T1": "yes"}
-    categories = {"T1": "default"}
+    series_by_ticker = {"T1": MAKER_FEE_SERIES}
     trades = _df([
         _trade("t1", "T1", 0.50, "yes", "2023-06-01T00:00:00Z"),
     ])
-    result = compute_maker_margin_ge_50c(trades, resolutions, categories, s, {"T1"})
+    result = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, s, {"T1"})
     assert result.layer_a is not None
     assert result.layer_b is not None
     assert result.layer_c is not None
@@ -232,11 +242,11 @@ def test_missing_resolution_or_category_skips_without_crash():
 def test_invalid_count_fp_skipped():
     s = _minimal_schedule()
     resolutions = {"T1": "yes"}
-    categories = {"T1": "default"}
+    series_by_ticker = {"T1": MAKER_FEE_SERIES}
     trades = _df([
         _trade("t1", "T1", 0.60, "yes", "2023-01-01T00:00:00Z", count_fp=0.0),
     ])
-    result = compute_maker_margin_ge_50c(trades, resolutions, categories, s, {"T1"})
+    result = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, s, {"T1"})
     assert result.layer_a is None
     assert result.n_maker_a == 0
     assert result.n_taker_a == 0
@@ -250,11 +260,11 @@ def test_post_boundary_maker_fee_makes_layer_b_diverge_from_layer_c():
     # maker-fee difference alone must push margin_b below margin_c.
     s = _minimal_schedule()
     resolutions = {"T1": "yes"}
-    categories = {"T1": "default"}
+    series_by_ticker = {"T1": MAKER_FEE_SERIES}
     trades = _df([
         _trade("t1", "T1", 0.50, "yes", "2026-01-01T00:00:00Z"),
     ])
-    result = compute_maker_margin_ge_50c(trades, resolutions, categories, s, {"T1"})
+    result = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, s, {"T1"})
 
     assert result.layer_a is not None
     assert result.layer_b is not None

@@ -142,7 +142,12 @@ def returns_by_band(yes_only: pl.DataFrame, fee_schedule: dict[str, Any]) -> dic
                 gap_excluded += 1
                 continue
             try:
-                order_fee = fee_usd_for(fee_schedule, "taker", row["category"], count, p, as_of)
+                # Keyed on the market ticker, not the category: the only
+                # ticker-dependent taker rate is the S&P/Nasdaq half-rate
+                # carve-out, which data/fees.yaml scopes by ticker prefix.
+                order_fee = fee_usd_for(
+                    fee_schedule, "taker", count, p, as_of, market_ticker=row["ticker"]
+                )
                 fee_per_contract = order_fee / count
                 net.append((payout - p - fee_per_contract) / p)
             except FeeScheduleGapError:
@@ -211,7 +216,12 @@ def maker_taker_split(
             counts["maker"] += 1
 
         if role == "maker":
-            # No maker fee in BDW's window -- post-fee equals gross here.
+            # No maker fee anywhere in BDW's window -- now confirmed against
+            # the primary artifact rather than assumed: every archived fee
+            # schedule through 2025-02 states that resting orders are not
+            # charged, and the first maker fee is stamped 2025-05-13, after
+            # R1's 2025-04-30 cutoff (docs/sources/fees/). Post-fee equals
+            # gross here by construction, not by approximation.
             ret = (payout - price) / price
             maker_returns.append(ret)
             if price >= 0.50:
@@ -224,7 +234,9 @@ def maker_taker_split(
             continue
         as_of = datetime.fromtimestamp(row["close_time_epoch"], tz=timezone.utc).isoformat()
         try:
-            order_fee = fee_usd_for(fee_schedule, "taker", row["category"], count, price, as_of)
+            order_fee = fee_usd_for(
+                fee_schedule, "taker", count, price, as_of, market_ticker=row["ticker"]
+            )
         except FeeScheduleGapError:
             gap_excluded += 1
             continue

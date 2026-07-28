@@ -26,6 +26,28 @@ log = logging.getLogger(__name__)
 
 COMPACT_AT_PARTS = 64
 
+
+def _duckdb_connect() -> duckdb.DuckDBPyConnection:
+    """An in-memory DuckDB connection that can SPILL TO DISK.
+
+    Without a temp_directory an in-memory database has nowhere to put
+    intermediates and raises OutOfMemoryError instead of spilling. That is not
+    hypothetical: once Pass 2's R2 tape landed, the whole-tape DISTINCT ON
+    feeding last_trade_at_or_before stopped fitting in RAM and R1's panel build
+    -- which had run fine for weeks -- died with "Allocation failure"
+    (2026-07-28, ~22.4M fills). Spilling turns that into a slower query rather
+    than a failed pipeline, which is the right trade for a batch job.
+
+    The spill directory sits under the parquet root rather than the OS temp
+    dir so it lands on the same (large) volume as the data itself.
+    """
+    con = duckdb.connect()
+    spill = PROJECT_ROOT / "data" / "duckdb_spill"
+    spill.mkdir(parents=True, exist_ok=True)
+    con.execute(f"SET temp_directory = '{spill.as_posix()}'")
+    return con
+
+
 TRADE_SCHEMA = {
     "trade_id": pl.String,
     "ticker": pl.String,
@@ -192,7 +214,7 @@ class TradeStore:
             "  FROM read_parquet(?)"
             ") GROUP BY ticker"
         )
-        result = duckdb.connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
+        result = _duckdb_connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
         return dict(zip(result["ticker"].to_list(), result["dollar_volume"].to_list()))
 
     def last_trade_at_or_before(
@@ -224,7 +246,7 @@ class TradeStore:
         as the aggregates above."""
         if not refs or not self.months_on_disk():
             return {}
-        con = duckdb.connect()
+        con = _duckdb_connect()
         con.execute("CREATE TEMP TABLE refs(ticker VARCHAR, key BIGINT, ref_epoch BIGINT)")
         con.executemany("INSERT INTO refs VALUES (?, ?, ?)", refs)
         # created_time is an ISO-8601 string in the tape; epoch() on a cast
@@ -237,10 +259,36 @@ class TradeStore:
                    t.count_fp, t.taker_outcome_side
             FROM refs r
             ASOF JOIN (
-                SELECT ticker, yes_price_dollars, created_time, count_fp, taker_outcome_side,
-                       CAST(epoch(CAST(created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch
-                FROM (SELECT DISTINCT ON (trade_id) * FROM read_parquet(?))
-                WHERE yes_price_dollars IS NOT NULL AND created_time IS NOT NULL
+                -- One row per (ticker, INSTANT), not per fill. Kalshi records
+                -- every fill of a sweeping order at the same timestamp, and
+                -- those fills can cross several price levels, so "the last
+                -- trade at or before T" is genuinely ambiguous whenever an
+                -- instant carries more than one fill. Left ambiguous, the ASOF
+                -- join answered it from whatever order the parallel scan
+                -- happened to produce: measured 2026-07-28, two runs over an
+                -- unchanged tape returned the same 121,803 panel rows with
+                -- ~60 of them in DIFFERENT price bands. Every R1 number was
+                -- one draw from that. The tie-break below (smallest trade_id)
+                -- is arbitrary but FIXED, which is what determinism requires;
+                -- it is a construction pin, recorded in
+                -- docs/r1_reproduction_findings.md.
+                SELECT DISTINCT ON (ticker, created_epoch)
+                       ticker, yes_price_dollars, created_time, count_fp,
+                       taker_outcome_side, created_epoch
+                FROM (
+                    SELECT DISTINCT ON (trade_id) trade_id, ticker, yes_price_dollars,
+                           created_time, count_fp, taker_outcome_side,
+                           CAST(epoch(CAST(created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch
+                    FROM read_parquet(?)
+                    -- Restrict to the tickers actually asked about BEFORE the
+                    -- dedup. R1's panel needs ~33k of the ~92k markets on the
+                    -- tape, and deduping all 22M+ fills to answer for a third
+                    -- of them is what pushed this query out of memory once
+                    -- Pass 2's R2 tape landed.
+                    WHERE ticker IN (SELECT ticker FROM refs)
+                      AND yes_price_dollars IS NOT NULL AND created_time IS NOT NULL
+                )
+                ORDER BY ticker, created_epoch, trade_id
             ) t
               ON r.ticker = t.ticker AND r.ref_epoch >= t.created_epoch
             """,
@@ -271,5 +319,5 @@ class TradeStore:
         query = (
             "SELECT ticker, COUNT(DISTINCT trade_id) AS n FROM read_parquet(?) GROUP BY ticker"
         )
-        result = duckdb.connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
+        result = _duckdb_connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
         return dict(zip(result["ticker"].to_list(), result["n"].to_list()))

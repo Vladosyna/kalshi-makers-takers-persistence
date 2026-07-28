@@ -31,6 +31,11 @@ from kalshi_mt.util import epoch_to_et, et_to_epoch, shift_et_calendar_days
 PANEL_SCHEMA = {
     "ticker": pl.String,
     "event_ticker": pl.String,  # the event-clustering key (spec S4's clustering unit)
+    # The maker-fee treatment is defined per SERIES (data/fees.yaml scopes it to
+    # an enumerated list), so R2's difference-in-differences cannot assign
+    # treatment without it. Carried on every panel row rather than joined back
+    # later, so the treated flag can never disagree with the row it describes.
+    "series_ticker": pl.String,
     "lookback_day": pl.Int64,
     "category": pl.String,
     "close_time_epoch": pl.Int64,
@@ -64,7 +69,7 @@ def build_yes_only_panel(conn, in_scope_tickers: set[str]) -> pl.DataFrame:
     rows = conn.execute(
         """
         SELECT p.ticker, p.lookback_day, p.yes_price_dollars, p.source,
-               m.result, m.close_time_epoch, m.category, m.event_ticker
+               m.result, m.close_time_epoch, m.category, m.event_ticker, m.series_ticker
         FROM price_panel p
         JOIN markets m ON m.ticker = p.ticker
         WHERE m.result IN ('yes', 'no')
@@ -77,6 +82,7 @@ def build_yes_only_panel(conn, in_scope_tickers: set[str]) -> pl.DataFrame:
             continue
         records.append({
             "ticker": r["ticker"], "event_ticker": r["event_ticker"],
+            "series_ticker": r["series_ticker"],
             "lookback_day": r["lookback_day"], "category": r["category"],
             "close_time_epoch": r["close_time_epoch"], "side": "yes",
             "y": 1.0 if r["result"] == "yes" else 0.0, "p": r["yes_price_dollars"],
@@ -116,7 +122,7 @@ def build_yes_only_panel_backfilled(conn, trade_store, in_scope_tickers: set[str
         r["ticker"]: r
         for r in conn.execute(
             """
-            SELECT ticker, event_ticker, category, close_time_epoch, result
+            SELECT ticker, event_ticker, series_ticker, category, close_time_epoch, result
             FROM markets
             WHERE result IN ('yes', 'no') AND close_time_epoch IS NOT NULL
             """
@@ -149,6 +155,7 @@ def build_yes_only_panel_backfilled(conn, trade_store, in_scope_tickers: set[str
         m = markets[ticker]
         records.append({
             "ticker": ticker, "event_ticker": m["event_ticker"],
+            "series_ticker": m["series_ticker"],
             "lookback_day": day, "category": m["category"],
             "close_time_epoch": m["close_time_epoch"], "side": "yes",
             "y": 1.0 if m["result"] == "yes" else 0.0, "p": price,

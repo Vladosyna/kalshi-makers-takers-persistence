@@ -181,6 +181,23 @@ instructions, and registers nothing on its own. Read
 | `kmt escalate` | Escalation decision (replication note vs. standalone paper), bound to the pre-registered delta_bar tests |
 | `kmt report` | Assemble the final report/note |
 
+### Provenance tools
+
+The fee schedule is the most error-prone input in this replication (spec §7),
+so it is not hand-written. These regenerate it and the evidence behind it:
+
+| Tool | What it produces |
+|---|---|
+| `tools/fetch_fee_schedule_history.py` | Archives every Wayback capture of Kalshi's published fee-schedule PDF into `docs/sources/fees/` and parses them into `version_history.json` (effective date, rates, functional form, per-series scope) |
+| `tools/fetch_series_fee_catalog.py` | Freezes per-series `fee_type`/`fee_multiplier` for all ~12k series from Kalshi's API into `data/series_fee_catalog.json` |
+| `tools/build_fees_yaml.py` | Generates `data/fees.yaml` from the two above — **do not hand-edit the YAML** |
+| `tools/measure_fee_model_impact.py` | Prices R1's panel under both BDW's stated fee model and Kalshi's published schedule, band by band |
+
+`fetch_fee_schedule_history.py` needs `pypdf` for the parsing half (the
+archiving half is stdlib-only); it is deliberately not a project dependency,
+since adding one forces a `uv sync` that cannot run while a collector process
+holds `.venv/Scripts/kmt.exe` open.
+
 ### Running the long fetches
 
 Both passes take hours to days against the real universe, so launch them
