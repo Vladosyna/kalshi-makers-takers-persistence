@@ -542,11 +542,15 @@ def r2() -> None:
     S2). Refuses to run without R1's frozen calendar-2024 category-mix
     artifact (data/frozen_2024_mix.json) -- Phase 7's own hard dependency,
     never recomputed from R2 data (spec's pre-registration firewall)."""
+    from dataclasses import asdict
+
+    from kalshi_mt.fees.schedule import load_fee_schedule
     from kalshi_mt.r1.filters import apply_and_log
     from kalshi_mt.r1.panel import build_yes_only_panel_backfilled
     from kalshi_mt.r1.reconcile import load_frozen_2024_mix
     from kalshi_mt.r1.regression import fit_mz_regression
     from kalshi_mt.r2.decomposition import category_weights_from_panel, decompose, delta_bar_with_ci
+    from kalshi_mt.r2.did import run_did_pair
     from kalshi_mt.r2.horizon import run_horizon_robustness
     from kalshi_mt.r2.regression import fit_all_categories
     from kalshi_mt.r2.report import build_r2_report, load_r2_report, write_r2_report
@@ -638,11 +642,30 @@ def r2() -> None:
 
     horizon = run_horizon_robustness(pooled_panel, frozen_2024_mix)
 
+    # PRIMARY for the fee question since analysis_plan.md Addendum 3: Kalshi's
+    # maker fee was a per-series surcharge, not an exchange-wide regime change,
+    # so treated and untreated series in the same months identify it far better
+    # than a break at one date can. delta_bar["fee"] above is still computed and
+    # still written to the locked artifact -- it is what the plan originally
+    # committed to, and a specification change has to be visible, not tidy.
+    did = run_did_pair(pooled_panel, load_fee_schedule())
+    maker_fee_did = {
+        "primary_for": "fee boundary (analysis_plan.md Addendum 3)",
+        "twfe": None if did["twfe"] is None else asdict(did["twfe"]),
+        "clean_controls": None if did["clean_controls"] is None else asdict(did["clean_controls"]),
+        "note": (
+            "delta_did is the differential change in the MZ slope while a series "
+            "carries a maker fee, net of the common calendar path. None means the "
+            "design is not identified on this sample (no treated rows, no controls, "
+            "or a single month) -- never a null result."
+        ),
+    }
+
     report = build_r2_report(
         r2_filters=r2_filter_summary, psi_bar_r1=psi_bar_r1,
         r1_panel_n=len(r1_panel), r2_panel_n=len(r2_panel), pooled_panel_n=len(pooled_panel),
         categories_fit=sorted(category_fits.keys()), delta_bar=delta_bar, verdict=verdict,
-        decomposition=decomposition, horizon=horizon,
+        decomposition=decomposition, horizon=horizon, maker_fee_did=maker_fee_did,
     )
     lock_path = write_r2_report(report, PROJECT_ROOT / "reports" / "r2" / "verdict_lock.json")
     # Re-read the persisted payload (rather than re-stamping a second

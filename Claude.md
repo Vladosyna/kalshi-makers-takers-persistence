@@ -40,6 +40,8 @@ Positioning: the prediction-market twin of paper #1's C2 frame (post-publication
 
 ### R2 — extension (2025-05-01 → 2026-06-30; the contribution)
 
+**AMENDED 2026-07-28 — the fee question is now a series-level DiD, not an exchange-wide break.** Kalshi's own published schedules (§3) show the maker fee was a surcharge on an enumerated list of series, never an exchange-wide regime change: in the window the first list was in force, treated series were **5.3% of in-scope markets but 25.9% of traded volume**. A break at one date therefore has almost no treatment behind it, while treated and untreated series trading in the same months give a within-venue control group — better identification than the design below, and it absorbs the sports-composition shift too, since sports grows in both arms. The DiD equation, its verdict vocabulary, the staggered-adoption caveat and its clean-controls companion fit are pinned in `docs/analysis_plan.md` Addendum 3, committed before any estimate. **δ_fee below is retained, computed, and written to the locked artifact unchanged** — reporting only the new estimand would hide a specification change instead of recording one. **δ_pub is unaffected**: publication *was* exchange-wide.
+
 **Primary estimand (one, not four):** the two interaction coefficients from a single pooled, category-interacted Mincer–Zarnowitz regression on Yes prices,
 
 `(Y−P) = α_c + ψ_c·P + Σ_b [ α_{b,c}·D_b + δ_{b,c}·(D_b·P) ] + ε`,

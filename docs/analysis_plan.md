@@ -1,6 +1,6 @@
 # Analysis Plan
 
-**Committed:** 2026-07-16 (UTC). **Status:** primary document. §1–§6 unchanged since commitment; see §7 Addendum 1 (2026-07-28) for the construction re-pins forced by R1's reproduction and Addendum 2 (2026-07-28) for the fee schedule sourced from primary artifacts — all made before any R2 estimate existed.
+**Committed:** 2026-07-16 (UTC). **Status:** primary document. §1–§6 unchanged since commitment; see §7 Addendum 1 (2026-07-28) for the construction re-pins forced by R1's reproduction, Addendum 2 (2026-07-28) for the fee schedule sourced from primary artifacts, and Addendum 3 (2026-07-28) for the fee question's move to a series-level difference-in-differences — all made before any R2 estimate existed.
 
 This document expands `Claude.md` (v1.1) §2/§4/§5 into exact equations, thresholds, and inequalities, committed once, before any R2 estimate is computed — per the spec's own requirement ("Commit `docs/analysis_plan.md` ... BEFORE computing any R2 estimate") and this repo's honesty framing: historical data means this is **specification commitment**, not outcome-blind pre-registration. R3 (§4 below) is the only genuinely prospective arm. Any later change is appended as a dated addendum (§7), never a silent rewrite of §1–§6 — the same append-only discipline the sibling lab's `docs/pre_analysis_plan.md` follows.
 
@@ -186,3 +186,34 @@ BDW's own sentence is confirmed in direction and sharpened: makers were free eve
 The same fact supplies the remedy: treated and untreated series coexist in the same months, giving a within-venue control group and a genuine difference-in-differences for the fee question — stronger identification than the pre/post break the plan committed to, and partly immune to the composition problem of §2.3 because sports grows in both arms. Recording it here rather than adopting it silently: switching a primary estimand is a specification change, it is the author's call, and R2 cannot run until quote collection finishes anyway. Whichever is chosen, `δ_pub` is unaffected — publication *was* an exchange-wide event.
 
 **Remaining gap, carried explicitly.** From the 2025-10-01 version Kalshi removed the series list from the PDF and deferred to `kalshi.com/fee-schedule`, which is client-rendered and whose Wayback captures are empty shells. Per-series scope for 2025-10-01 → 2026-06-30 is therefore not directly observable. The two dated endpoints are **not nested** — 6 series left the list on 2025-09-17 and 8 more are absent from today's catalog, while 27 joined — so `fees.yaml` records evidence bounds, not logical ones: 103 series in both (primary), 138 in either. §3.3's ribbon is what carries the span, and §3.3's "fragile" rule continues to withhold escalation where a margin's sign flips inside it.
+
+### Addendum 3 — the fee question moves to a series-level DiD (committed 2026-07-28, UTC)
+
+**Still before any R2 estimate.** `reports/r2/` does not exist; `kmt r2` has not been run and no δ of any kind has been computed. This addendum resolves the design question Addendum 2 recorded and left open. It is a **specification change made from an institutional fact, not from data**: Kalshi's own published schedules say who was charged and when, and nothing here depends on how any estimate comes out. §1–§6 remain unchanged.
+
+**What changes.** For the FEE question only, the primary estimand becomes the difference-in-differences coefficient `δ_did`, from
+
+`(Y−P) = α + ψ·P + α_E·Ever + δ_E·(Ever·P) + Σ_m [α_m·D_m + δ_m·(D_m·P)] + α_D·Now + δ_D·(Now·P) + ε`
+
+where `Now = 1` if the market's series carried a maker fee on the day it closed, `Ever = 1` for every row of a series treated at some point inside the panel, and `D_m` are calendar-month dummies. Month terms enter in the **slope** as well as the level, because the estimand is a slope. `δ_D ≡ δ_did` is identified from variation *within a month, between* series that had the fee that month and series that did not.
+
+`Now` is read from `data/fees.yaml` through the same `entry_for` lookup the net-return layers use, so the DiD and the fee layers cannot disagree about who was treated. Treatment is time-varying and staggered by construction, matching the five dated list revisions.
+
+**Why this rather than §2.1's `δ_fee`.** §2.1 tests a break at one exchange-wide date. There was no exchange-wide fee change: in the window the first list was in force, treated series were 5.3% of in-scope markets and 25.9% of volume. `δ_fee` therefore has almost no treatment behind it, while the DiD has a within-venue control group observed in the same months — which additionally absorbs the sports-composition shift §2.3 exists to handle, since sports grows in both arms.
+
+**`δ_fee` is retained, computed, and written to the locked artifact unchanged.** Reporting only the new estimand would hide a specification change instead of recording one. Both appear in `reports/r2/verdict_lock.json`; the paper reports both and says which is primary and why.
+
+**Verdict vocabulary for `δ_did`**, fixed here before any estimate, mirroring §2.2's structure with `ψ̄_R1` as the reference bias:
+
+- **persisted:** fail to reject `δ_did = 0` AND reject `δ_did = −ψ̄_R1`;
+- **attenuated:** reject `δ_did = 0` with `−ψ̄_R1 < δ_did < 0`;
+- **eliminated:** fail to reject `δ_did = −ψ̄_R1` AND reject `δ_did = 0`;
+- **reversed:** reject `δ_did = 0` with `ψ̄_R1 + δ_did` significantly < 0;
+- **not identified:** the design has no treated rows, no controls, or a single month. Reported as such, **never as a null** — `fit_did` returns `None` here rather than a zero.
+- indeterminate combinations reported as such, no forcing.
+
+**Staggered adoption, disclosed not discovered.** Two-way fixed effects with staggered treatment is the Goodman-Bacon / Callaway–Sant'Anna problem: already-treated units act as controls for later-treated ones, and heterogeneous dynamic effects can give some comparisons negative weight. Every run therefore reports **two** fits — the TWFE one above and a **clean-controls** variant in which treated observations are compared only against never-treated series. Agreement is the evidence that weighting is not driving the result; on disagreement, the clean-controls estimate is the one reported.
+
+**Escalation (§5), tightened not loosened.** The fee arm's trigger now reads off `δ_did`, and requires rejection at 5% in **both** fits. That is a stricter bar than §5's original single test on `δ̄_fee`, so this cannot manufacture an escalation that the committed rule would have withheld. `δ̄_pub` and the maker-margin trigger are untouched.
+
+**`δ_pub` is unaffected.** Publication was an exchange-wide event; §2.1's specification for it stands exactly as committed.

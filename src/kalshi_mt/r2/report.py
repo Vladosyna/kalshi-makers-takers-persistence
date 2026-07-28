@@ -28,10 +28,16 @@ def build_r2_report(
     verdict: dict[str, str | None],
     decomposition: dict[str, DecompositionResult],
     horizon: HorizonRobustnessResult,
+    maker_fee_did: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Pure assembly -- no I/O, no clock call. Same shape `kmt r2` already
     prints to stdout; factored out here so write_r2_report persists
-    exactly what the operator saw, not a re-derived summary."""
+    exactly what the operator saw, not a re-derived summary.
+
+    `maker_fee_did` carries the series-level difference-in-differences that
+    Addendum 3 makes primary for the FEE question. `delta_bar["fee"]` stays in
+    the artifact unchanged -- it is what the plan originally committed to, and
+    dropping it would hide a specification change rather than record one."""
     return {
         "r2_filters": r2_filters,
         "psi_bar_r1": psi_bar_r1,
@@ -43,6 +49,7 @@ def build_r2_report(
         "verdict": verdict,
         "decomposition": {k: asdict(v) for k, v in decomposition.items()},
         "horizon_robustness": asdict(horizon),
+        "maker_fee_did": maker_fee_did,
     }
 
 

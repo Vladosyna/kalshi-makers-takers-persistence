@@ -85,3 +85,24 @@ def test_write_r2_report_does_not_mutate_input_dict(tmp_path):
     write_r2_report(report, tmp_path / "verdict_lock.json")
     assert set(report.keys()) == original_keys
     assert "locked_ts" not in report
+
+
+def test_report_carries_the_maker_fee_did_alongside_the_original_delta_bar():
+    """Addendum 3 makes the series-level DiD primary for the fee question, but
+    delta_bar["fee"] -- what the plan originally committed to -- must stay in
+    the locked artifact. A specification change has to be visible in the
+    record, not tidied out of it."""
+    kwargs = _sample_report_kwargs()
+    kwargs["maker_fee_did"] = {
+        "primary_for": "fee boundary (analysis_plan.md Addendum 3)",
+        "twfe": {"delta_did": -0.02, "delta_did_se": 0.01},
+        "clean_controls": {"delta_did": -0.019, "delta_did_se": 0.012},
+    }
+    report = build_r2_report(**kwargs)
+    assert report["maker_fee_did"]["twfe"]["delta_did"] == -0.02
+    assert report["delta_bar"]["fee"] == {"delta_bar": -1.0, "ci_lo": -1.5, "ci_hi": -0.5}
+
+
+def test_report_maker_fee_did_defaults_to_none_when_not_supplied():
+    report = build_r2_report(**_sample_report_kwargs())
+    assert report["maker_fee_did"] is None
