@@ -1,6 +1,6 @@
 # Analysis Plan
 
-**Committed:** 2026-07-16 (UTC). **Status:** primary document. §1–§6 unchanged since commitment; see §7 Addendum 1 (2026-07-28) for the construction re-pins forced by R1's reproduction, Addendum 2 (2026-07-28) for the fee schedule sourced from primary artifacts, and Addendum 3 (2026-07-28) for the fee question's move to a series-level difference-in-differences — all made before any R2 estimate existed.
+**Committed:** 2026-07-16 (UTC). **Status:** primary document. §1–§6 unchanged since commitment; see §7 Addendum 1 (2026-07-28) for the construction re-pins forced by R1's reproduction, Addendum 2 (2026-07-28) for the fee schedule sourced from primary artifacts, Addendum 3 (2026-07-28) for the fee question's move to a series-level difference-in-differences, and Addendum 4 (2026-07-28) for the decision to collect the full R2 window and δ_pub's stated controlled sub-window — all made before any R2 estimate existed.
 
 This document expands `Claude.md` (v1.1) §2/§4/§5 into exact equations, thresholds, and inequalities, committed once, before any R2 estimate is computed — per the spec's own requirement ("Commit `docs/analysis_plan.md` ... BEFORE computing any R2 estimate") and this repo's honesty framing: historical data means this is **specification commitment**, not outcome-blind pre-registration. R3 (§4 below) is the only genuinely prospective arm. Any later change is appended as a dated addendum (§7), never a silent rewrite of §1–§6 — the same append-only discipline the sibling lab's `docs/pre_analysis_plan.md` follows.
 
@@ -231,3 +231,30 @@ Note what this argument does **not** claim: the fee was not economically margina
 **Escalation (§5), tightened not loosened.** The fee arm's trigger now reads off `δ_did`, and requires rejection at 5% in **both** fits. That is a stricter bar than §5's original single test on `δ̄_fee`, so this cannot manufacture an escalation that the committed rule would have withheld. `δ̄_pub` and the maker-margin trigger are untouched.
 
 **`δ_pub` is unaffected.** Publication was an exchange-wide event; §2.1's specification for it stands exactly as committed.
+
+### Addendum 4 — the R2 window is collected in full, and δ_pub gets a stated controlled sub-window (committed 2026-07-28, UTC)
+
+**Still before any R2 estimate.** No δ of any kind has been computed; as of this addendum **no month before 2026-05 is analysable at all** (see the readiness table below), so there is nothing to have looked at.
+
+**The decision: collect §2's window in full, 2025-05-01 → 2026-06-30.** It was measured against a cheaper alternative and the alternative was declined.
+
+Measured readiness on 2026-07-28, where "analysable" means quoted, spread-passing, and with Pass 2's tape present:
+
+| Months | Eligible | Quoted | In scope | Analysable |
+|---|---|---|---|---|
+| 2025-05 … 2025-12 | 103,841 | 29,798 | 26,751 | **0** |
+| 2026-01 … 2026-04 | 219,222 | **0** | 0 | **0** |
+| 2026-05, 2026-06 | 530,823 | 102,758 | 58,750 | 58,750 |
+
+Everything analysable today sits *after* both boundaries, which is why neither δ exists yet. Collection is three serial steps, not one: boundary-month quotes (≈48h at the measured 1,548 markets/hour), Pass 2 for the ~93,000 markets that will pass the spread filter with no tape at all, then the same two steps for 2026-01 … 2026-04.
+
+**Why the full window rather than truncating at 2025-12-31.** Truncation was the cheap option and had a real argument behind it: the Polymarket control archive ends 2025-12-31, so the analysis window and the control window would coincide. It was declined because the control was never doing identification work — §2.4 says so in terms, and Polymarket's reversed tail bias puts parallel-trends language off the table. What truncation would actually cost is the thing the paper is about: BDW's §6 question is whether the biases persist *now that they have been documented*, and a 2025-12-31 cutoff measures **3.7 months** after the 2025-09-08 publication. The full window measures **~10 months**. Post-publication decay is a multi-year literature; three months is not a persistence test.
+
+**What the control's absence in 2026 does and does not cost, stated so it is not discovered later.** It is asymmetric:
+
+- **`δ_fee` is unaffected across the whole window.** Its identification is now within-Kalshi (Addendum 3): treated and untreated series in the same months, which needs no second venue.
+- **`δ_pub` has no within-Kalshi control** — publication hit every series — so the secular-trend check is the only external check it had. Therefore: **δ_pub's controlled sub-window is 2025-05-01 → 2025-12-31, and everything after it is an uncontrolled extension of the horizon.** The two are reported as separate rows, never averaged into one figure.
+- This is structural, not a collection gap. Polymarket's own staggered 2026 fee reform (crypto January, sports February, the rest March) means even a longer archive would carry Polymarket's own treatment inside our window. No archive fixes it; only a different control venue would, and none is in scope.
+- A weak but genuine internal substitute is available and will be reported alongside: a **placebo on the categories BDW found no bias in** (politics, entertainment — their Table 8). If publication drove a change, it should appear where the bias was and not where it was not.
+
+**Timeline consequence, recorded rather than left implicit.** §6's mid-August draft date does not survive this decision, and the operator accepted that explicitly ("время терпит"). The draft moves with collection; nothing in §2's specification, thresholds or verdict vocabulary changes.

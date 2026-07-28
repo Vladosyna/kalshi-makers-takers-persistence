@@ -125,13 +125,18 @@ From 2026-07-04 the lab's live Kalshi collection adds order-book depth/spread co
 | Weeks 3–4 | R2: primary interaction tests, decomposition, control-venue overlay, fee layers + ribbon; escalation decision per §5 |
 | ~Mid-August 2026 | Full draft (note format) |
 
+**AMENDED 2026-07-28 — the mid-August draft date does not survive the window decision, and that was accepted deliberately.** Readiness measured on 2026-07-28: **no month before 2026-05 is analysable** (quoted + spread-passing + taped). Everything collected sits *after* both boundaries, so neither δ exists yet. Collection is three serial steps — boundary-month quotes (≈48h at a measured 1,548 markets/hour), Pass 2 for the ~93,000 markets that will pass the spread filter with no tape at all, then both steps again for 2026-01 … 2026-04 (219,222 eligible, zero quoted). Order of two to three weeks.
+
+The cheap alternative — truncating R2 at 2025-12-31, where the Polymarket control archive ends — was measured and **declined**. It would have measured only **3.7 months** after the 2025-09-08 publication against **~10** for the full window, and BDW's §6 question is precisely about persistence after documentation. Full reasoning, and the asymmetry it creates (δ_fee unaffected; **δ_pub controlled only through 2025-12-31**, everything after reported as an uncontrolled horizon extension, with a placebo on BDW's no-bias categories as the internal substitute) is pinned in `docs/analysis_plan.md` Addendum 4. Nothing in §2's specification, thresholds or verdict vocabulary changes — only the date.
+
 ## 7. Known risks, restated
 
 - **Historical API completeness** (2021–2022 depth) — step-zero positive check; if partial, R1 becomes a partial-window reproduction with coverage reported against 46,282.
 - **Fee-history reconstruction** — still the single most error-prone input; now mitigated by primary-artifact sourcing, the step-function keying, the three layers, and the ribbon with its break-even statistic.
 - **Composition drift** — now the design's centerpiece rather than a risk footnote; residual risk is thin category cells (wild bootstrap + honest "insufficient cell" reporting).
 - **Scoop risk** — BDW invited the question in print and own a pipeline; speed is the moat; check SSRN/arXiv for BDW follow-ups before drafting.
-- **Control-venue validity** — reversed-sign bias and spillover caveats disclosed by design (§2); the control informs, it does not identify.
+- **Control-venue validity** — reversed-sign bias and spillover caveats disclosed by design (§2); the control informs, it does not identify. **Sharpened 2026-07-28:** the archive ends 2025-12-31 and Polymarket's own staggered 2026 fee reform means no longer archive could serve either, so R2's 2026 half is structurally uncontrolled. Because δ_fee's identification moved inside Kalshi (Addendum 3), this costs **δ_pub only** — reported with its controlled sub-window stated, never averaged across it.
+- **Collection is the schedule's critical path, and it is serial** — quotes, then Pass 2 on whatever the spread filter passes, per month range. Readiness is measured as *analysable* (quoted + spread-passing + taped), never as quote percentage: on 2026-07-28 the two differed by everything, with 28.7% of boundary months quoted and **zero** of them analysable.
 
 ---
 
