@@ -23,24 +23,34 @@ the real schemas turned out to match most of them directly
 markets.parquet has NO scalar outcome/result/winner column at all --
 only `outcome_prices`, a stringified 2-element list (see
 OUTCOME_LIST_CANDIDATES and _parse_outcome_prices_first for the fix), and
-NO category/tag/market_category/event_category column either (there is
-no fallback for this one -- see below). Confirmed end-to-end: a real run
+NO category/tag/market_category/event_category column either (see the
+category section below). Confirmed end-to-end: a real run
 of build_polymarket_panel against the full archive returns 163,097 panel
 rows across the full 2025-05..2025-12 window in ~6 seconds, and
 monthly_psi_path produces a result for all 8 months (n ranging
 4,719 to 46,020 per month).
 
-Category mapping is a KNOWN GAP, not a bug: markets.parquet carries no
-category-like column at all (only `question`/`event_title`/`event_slug`
-free text), so `category_col` detection always returns None against the
-real archive and every panel row's `category` comes back NULL. This
-degrades only the descriptive by-category breakdown S2.4 mentions as
-secondary -- the headline monthly psi path is market-wide, not
-category-interacted, so it is unaffected. Recovering a category signal
-would require text-classifying `event_title`/`question` (e.g. keyword
-matching against data/category_map_polymarket_kalshi.yaml's Kalshi-side
-vocabulary), which is future work, not a blocker for the control-venue
-overlay's primary estimand.
+Category mapping was a known gap until 2026-07-28 and is now CLOSED BY
+TEXT CLASSIFICATION. markets.parquet carries no category-like column at all,
+only `question`/`slug`/`event_slug`/`event_title` free text, so every panel
+row's `category` used to come back NULL and S2.4's by-category breakdown did
+not exist. The strata now come from ordered regex rules in
+data/category_map_polymarket_kalshi.yaml (v2), whose vocabulary was built from
+measured token frequencies over the 210,366 markets resolving inside the
+control window rather than from intuition, and whose Kalshi-side values are
+validated against Kalshi's real taxonomy on load.
+
+Two things this deliberately does NOT do. It does not force an unrecognised
+market into a bucket -- `classify_category` returns None and the market still
+contributes to the market-wide psi path, which is S2.4's headline and never
+depended on the strata. And it does not read a category COLUMN even if a
+future archive grows one, because those values would be Polymarket's
+vocabulary, not Kalshi's (see TEXT_CATEGORY_COLUMNS).
+
+Classification coverage is a number to REPORT alongside any stratified figure,
+not a target to maximise -- `tools/measure_polymarket_categories.py` prints it
+together with real per-stratum samples, which is what the rules should be
+judged on.
 
 Three caveats spec S2.4 requires verbatim in any write-up that cites this
 module's output (CAVEATS below), plus the coverage-gap statement: R2's
@@ -55,6 +65,7 @@ when asked for a window outside [CONTROL_START, CONTROL_END].
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,7 +130,16 @@ OUTCOME_CANDIDATES = ["outcome", "resolved_outcome", "payout_yes", "result", "wi
 # conversion is needed, only the outcome extraction below.
 OUTCOME_LIST_CANDIDATES = ["outcome_prices"]
 RESOLVED_TS_CANDIDATES = ["resolved_ts", "end_date_iso", "end_date", "close_time", "resolution_date", "resolved_time"]
-CATEGORY_CANDIDATES = ["category", "tag", "market_category", "event_category"]
+# Free-text columns the category rules classify on, most specific first: a slug
+# like `nba-nyk-bos-2025-07-13` identifies its stratum far more reliably than
+# the question text ("Knicks vs. Celtics") does.
+#
+# There is deliberately no category-COLUMN path. The real archive has none, and
+# a future archive that grew one would carry POLYMARKET's vocabulary, not
+# Kalshi's -- passing those strings through would create strata that match
+# nothing on the Kalshi side, which is precisely the failure load_category_rules
+# refuses. Such a column would need its own value map before it could be used.
+TEXT_CATEGORY_COLUMNS = ["event_slug", "slug", "event_title", "question"]
 
 
 def download_bootstrap_files(local_dir: str = "data/bootstrap") -> dict[str, str]:
@@ -145,19 +165,71 @@ def _detect_column(available: list[str], candidates: list[str]) -> str | None:
     return None
 
 
-def load_category_map(path: str | Path = "data/category_map_polymarket_kalshi.yaml") -> dict[str, str]:
-    """Polymarket category/tag -> Kalshi category string. Best-effort
-    (see the yaml file's own header) -- rows whose Polymarket category
-    isn't in this map still flow through build_polymarket_panel with
-    category=None rather than being dropped; S2.4's headline monthly psi
-    path is market-wide, not category-interacted, so an incomplete map
-    degrades a descriptive breakdown, never the headline itself."""
+@dataclass(frozen=True)
+class CategoryRule:
+    category: str
+    patterns: tuple[re.Pattern[str], ...]
+
+
+def load_category_rules(
+    path: str | Path = "data/category_map_polymarket_kalshi.yaml",
+) -> tuple[CategoryRule, ...]:
+    """Ordered text->Kalshi-category rules from the versioned map file.
+
+    Rules are ORDERED and first-match-wins, so the file's sequence is part of
+    its meaning, not presentation -- specific patterns must precede the general
+    ones that would otherwise swallow them (Crypto before Financials on
+    "price", World and Elections before Politics).
+
+    Every rule's `category` is checked against the file's own
+    `kalshi_categories` list, which holds the strings actually observed in
+    data/kmt.db. A typo there would otherwise create a phantom stratum that
+    silently fails to line up with any Kalshi category -- exactly the failure
+    version 1 of this file had, where the Kalshi side was guessed from site
+    navigation and included "Culture", which does not exist in the data."""
     path = Path(path)
     if not path.exists():
-        return {}
+        return ()
     with path.open(encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
-    return {str(k): str(v) for k, v in (raw.get("map") or {}).items()}
+    allowed = {str(c) for c in (raw.get("kalshi_categories") or [])}
+    rules: list[CategoryRule] = []
+    for entry in raw.get("rules") or []:
+        category = str(entry.get("category", "")).strip()
+        if not category:
+            continue
+        if allowed and category not in allowed:
+            raise ValueError(
+                f"category_map_polymarket_kalshi.yaml maps to {category!r}, which is not in "
+                f"its own kalshi_categories list. Kalshi has no such category, so this rule "
+                "would create a stratum that matches nothing on the Kalshi side."
+            )
+        patterns = tuple(re.compile(str(p), re.IGNORECASE) for p in entry.get("patterns") or [])
+        if patterns:
+            rules.append(CategoryRule(category=category, patterns=patterns))
+    return tuple(rules)
+
+
+def classify_category(rules: tuple[CategoryRule, ...], *text_fields: Any) -> str | None:
+    """First rule whose any pattern matches the joined text, else None.
+
+    None is a real answer, not a failure to be filled in: a market the rules do
+    not recognise keeps `category = None` and still contributes to the
+    market-wide psi path, which is S2.4's headline. Forcing it into a bucket to
+    raise a coverage percentage would corrupt the stratum it landed in.
+
+    Hyphens are normalised to spaces AND kept, so patterns can be written
+    either way ('club-world-cup' and 'world cup' both work) without the caller
+    having to know how Polymarket slugs happen to be punctuated."""
+    joined = " ".join(str(t) for t in text_fields if t).lower()
+    if not joined:
+        return None
+    normalised = f"{joined} {joined.replace('-', ' ')}"
+    for rule in rules:
+        for pattern in rule.patterns:
+            if pattern.search(normalised):
+                return rule.category
+    return None
 
 
 def _outcome_to_float(value: Any) -> float | None:
@@ -228,7 +300,7 @@ def _epoch_sql(dtype: pl.DataType, column_sql: str) -> str:
 
 def build_polymarket_panel(
     quant_path: str | Path, markets_path: str | Path,
-    category_map: dict[str, str] | None = None,
+    category_rules: tuple[CategoryRule, ...] | None = None,
     start: int = CONTROL_START, end: int = CONTROL_END,
 ) -> pl.DataFrame:
     """Joins markets.parquet and quant.parquet on the detected market-id
@@ -271,7 +343,7 @@ def build_polymarket_panel(
             "COVERAGE_GAP_STATEMENT; this module refuses to extrapolate."
         )
 
-    category_map = category_map or {}
+    category_rules = category_rules or ()
 
     markets_schema = pl.scan_parquet(markets_path).collect_schema()
     markets_columns = markets_schema.names()
@@ -279,7 +351,6 @@ def build_polymarket_panel(
     outcome_col = _detect_column(markets_columns, OUTCOME_CANDIDATES)
     outcome_list_col = _detect_column(markets_columns, OUTCOME_LIST_CANDIDATES) if outcome_col is None else None
     resolved_ts_col = _detect_column(markets_columns, RESOLVED_TS_CANDIDATES)
-    category_col = _detect_column(markets_columns, CATEGORY_CANDIDATES)
     if market_id_col is None or (outcome_col is None and outcome_list_col is None) or resolved_ts_col is None:
         raise ValueError(
             "could not detect required markets.parquet columns "
@@ -310,15 +381,18 @@ def build_polymarket_panel(
 
     resolved_epoch_sql = _epoch_sql(markets_schema[resolved_ts_col], resolved_ident)
     trade_epoch_sql = _epoch_sql(quant_schema[trade_ts_col], f"t.{trade_ts_ident}")
-    category_select = f", {_quote_ident(category_col)}::VARCHAR AS _category_raw" if category_col is not None else ""
-    category_out = ", m._category_raw" if category_col is not None else ""
+    # Free-text columns the category rules classify on. The real archive has no
+    # category column at all, so these ARE the category signal; each is selected
+    # only if present, so a future archive missing one still works.
+    text_cols = [c for c in TEXT_CATEGORY_COLUMNS if c in markets_columns]
+    text_select = "".join(f", {_quote_ident(c)}::VARCHAR AS _text_{c}" for c in text_cols)
+    text_out = "".join(f", m._text_{c}" for c in text_cols)
 
     query = f"""
     WITH in_window_markets AS (
         SELECT {market_id_ident}::VARCHAR AS market_id,
                {outcome_ident} AS _outcome_raw,
-               {resolved_epoch_sql} AS _resolved_epoch
-               {category_select}
+               {resolved_epoch_sql} AS _resolved_epoch{text_select}
         FROM read_parquet(?)
         WHERE {resolved_epoch_sql} BETWEEN ? AND ?
     ),
@@ -333,7 +407,7 @@ def build_polymarket_panel(
         JOIN in_window_markets m ON m.market_id = t.{quant_market_id_ident}::VARCHAR
         WHERE {trade_epoch_sql} <= m._resolved_epoch
     )
-    SELECT m.market_id, m._outcome_raw, m._resolved_epoch{category_out},
+    SELECT m.market_id, m._outcome_raw, m._resolved_epoch{text_out},
            lt._price_raw, lt._trade_epoch
     FROM in_window_markets m
     JOIN last_trade lt ON lt.market_id = m.market_id AND lt.rn = 1
@@ -355,10 +429,12 @@ def build_polymarket_panel(
         price = row["_price_raw"]
         if price is None or not (0.0 < price < 1.0):
             continue
-        raw_category = row.get("_category_raw")
+        category = classify_category(
+            category_rules, *(row.get(f"_text_{c}") for c in text_cols)
+        ) if category_rules else None
         records.append({
             "ticker": row["market_id"], "event_ticker": row["market_id"],
-            "lookback_day": 0, "category": category_map.get(raw_category) if raw_category else None,
+            "lookback_day": 0, "category": category,
             "close_time_epoch": int(row["_resolved_epoch"]), "side": "yes",
             "y": outcome, "p": price, "source": "polymarket_archive",
             # PANEL_SCHEMA carries the fill size for Kalshi's fee model; the

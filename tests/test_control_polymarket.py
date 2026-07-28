@@ -13,7 +13,8 @@ from kalshi_mt.control.polymarket import (
     _outcome_to_float,
     _parse_outcome_prices_first,
     build_polymarket_panel,
-    load_category_map,
+    classify_category,
+    load_category_rules,
     monthly_psi_path,
 )
 
@@ -68,18 +69,99 @@ def test_parse_outcome_prices_first(raw, expected):
 
 
 # ---------------------------------------------------------------------------
-# load_category_map
+# category rules -- the archive has no category column, so the strata come
+# from free text (event_slug / slug / event_title / question)
 # ---------------------------------------------------------------------------
 
-def test_load_category_map_missing_file_returns_empty(tmp_path):
-    assert load_category_map(tmp_path / "nope.yaml") == {}
+_RULES_YAML = """
+version: 2
+kalshi_categories: [Sports, Crypto, Politics, "Climate and Weather"]
+rules:
+  - category: Crypto
+    patterns: ['\\b(bitcoin|btc|ethereum)\\b']
+  - category: Sports
+    patterns: ['\\b(nba|nfl)\\b', '\\b(club-world-cup)\\b']
+  - category: Politics
+    patterns: ['\\b(trump|senate)\\b']
+"""
 
 
-def test_load_category_map_reads_map_key(tmp_path):
+def _rules(tmp_path):
     p = tmp_path / "map.yaml"
-    p.write_text("version: 1\nmap:\n  Weather: Climate and Weather\n  Politics: Politics\n", encoding="utf-8")
-    result = load_category_map(p)
-    assert result == {"Weather": "Climate and Weather", "Politics": "Politics"}
+    p.write_text(_RULES_YAML, encoding="utf-8")
+    return load_category_rules(p)
+
+
+def test_load_category_rules_missing_file_returns_empty(tmp_path):
+    assert load_category_rules(tmp_path / "nope.yaml") == ()
+
+
+def test_classify_matches_slug_and_question_text(tmp_path):
+    rules = _rules(tmp_path)
+    assert classify_category(rules, "nba-nyk-bos-2025-07-13", "Knicks vs. Celtics") == "Sports"
+    assert classify_category(rules, "bitcoin-up-or-down-july-4", None) == "Crypto"
+    assert classify_category(rules, None, None, "Will Trump sign the bill?") == "Politics"
+
+
+def test_classify_returns_none_rather_than_guessing(tmp_path):
+    """An unrecognised market keeps category=None and still contributes to the
+    market-wide psi path. Forcing it into a bucket to raise a coverage number
+    would corrupt the stratum it landed in."""
+    rules = _rules(tmp_path)
+    assert classify_category(rules, "a-market-about-something-unfamiliar") is None
+    assert classify_category(rules) is None
+    assert classify_category(rules, None, "") is None
+
+
+def test_classify_is_first_match_wins_in_file_order(tmp_path):
+    """Order encodes precedence, which is why the file's sequence is part of
+    its meaning rather than presentation."""
+    rules = _rules(tmp_path)
+    assert classify_category(rules, "bitcoin-nba-crossover-market") == "Crypto"
+
+
+def test_classify_normalises_hyphens_so_patterns_can_be_written_either_way(tmp_path):
+    rules = _rules(tmp_path)
+    assert classify_category(rules, "fifa-club-world-cup-chelsea-vs-psg") == "Sports"
+
+
+def test_load_category_rules_rejects_a_category_kalshi_does_not_have(tmp_path):
+    """Version 1 of the shipped map emitted "Culture", which does not exist in
+    Kalshi's data -- a phantom stratum matching nothing on the Kalshi side."""
+    p = tmp_path / "bad.yaml"
+    p.write_text(
+        "version: 2\nkalshi_categories: [Sports]\nrules:\n"
+        "  - category: Culture\n    patterns: ['\\bfilm\\b']\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="kalshi_categories"):
+        load_category_rules(p)
+
+
+def test_shipped_rules_only_emit_real_kalshi_categories():
+    rules = load_category_rules()
+    assert rules, "the shipped mapping file should load"
+    kalshi_categories = {
+        "Sports", "Crypto", "Exotics", "Financials", "Climate and Weather",
+        "Entertainment", "Mentions", "Commodities", "Economics", "Politics",
+        "Elections", "Science and Technology", "World", "Health",
+        "Transportation", "Companies", "Social", "Education",
+    }
+    assert {r.category for r in rules} <= kalshi_categories
+
+
+def test_shipped_rules_classify_real_polymarket_slugs():
+    """Slugs and questions taken verbatim from the archive's control window."""
+    rules = load_category_rules()
+    cases = [
+        ("nba-nyk-bos-2025-07-13", "Knicks vs. Celtics", "Sports"),
+        ("fifa-club-world-cup-chelsea-vs-psg-exact-score", "Will PSG win 3-1?", "Sports"),
+        ("bitcoin-up-or-down-september-30", None, "Crypto"),
+        ("will-israel-launch-a-major-ground-offensive-in-gaza-", None, "World"),
+        ("highest-temperature-in-nyc-in-august", None, "Climate and Weather"),
+    ]
+    for slug, question, expected in cases:
+        assert classify_category(rules, slug, question) == expected, slug
 
 
 # ---------------------------------------------------------------------------
@@ -99,12 +181,16 @@ def test_build_polymarket_panel_joins_and_filters_resolved_binary_in_window(tmp_
     quant_path = tmp_path / "quant.parquet"
 
     _write_markets_parquet(markets_path, [
-        {"condition_id": "M1", "outcome": "yes", "end_date_iso": "2025-06-15T00:00:00Z", "category": "Weather"},
-        {"condition_id": "M2", "outcome": "no", "end_date_iso": "2025-07-01T00:00:00Z", "category": "Politics"},
+        {"condition_id": "M1", "outcome": "yes", "end_date_iso": "2025-06-15T00:00:00Z",
+         "event_slug": "highest-temperature-in-nyc-in-june"},
+        {"condition_id": "M2", "outcome": "no", "end_date_iso": "2025-07-01T00:00:00Z",
+         "event_slug": "will-trump-sign-the-bill"},
         # Outside the control window entirely -- must be dropped.
-        {"condition_id": "M3", "outcome": "yes", "end_date_iso": "2026-03-01T00:00:00Z", "category": "Weather"},
+        {"condition_id": "M3", "outcome": "yes", "end_date_iso": "2026-03-01T00:00:00Z",
+         "event_slug": "highest-temperature-in-nyc-in-march"},
         # Unresolved (still open) -- must be dropped.
-        {"condition_id": "M4", "outcome": None, "end_date_iso": "2025-06-20T00:00:00Z", "category": "Weather"},
+        {"condition_id": "M4", "outcome": None, "end_date_iso": "2025-06-20T00:00:00Z",
+         "event_slug": "highest-temperature-in-nyc-in-june"},
     ])
     _write_quant_parquet(quant_path, [
         # M1: two trades, later one is the closing price used.
@@ -115,14 +201,15 @@ def test_build_polymarket_panel_joins_and_filters_resolved_binary_in_window(tmp_
         {"condition_id": "M4", "price": 0.4, "timestamp": _epoch(2025, 6, 15)},
     ])
 
-    category_map = {"Weather": "Climate and Weather", "Politics": "Politics"}
-    panel = build_polymarket_panel(quant_path, markets_path, category_map=category_map)
+    panel = build_polymarket_panel(quant_path, markets_path, category_rules=load_category_rules())
 
     assert set(panel["ticker"].to_list()) == {"M1", "M2"}
     m1 = panel.filter(pl.col("ticker") == "M1").row(0, named=True)
     assert m1["p"] == 0.7  # the LATER trade, not the earlier one
     assert m1["y"] == 1.0
+    # Stratum comes from the slug text, since the archive has no category column.
     assert m1["category"] == "Climate and Weather"
+    assert panel.filter(pl.col("ticker") == "M2").row(0, named=True)["category"] == "Politics"
     assert m1["lookback_day"] == 0
     assert m1["event_ticker"] == "M1"
     assert m1["source"] == "polymarket_archive"
@@ -143,7 +230,7 @@ def test_build_polymarket_panel_drops_trades_after_resolution():
             {"condition_id": "M1", "price": 0.6, "timestamp": _epoch(2025, 6, 10)},
             {"condition_id": "M1", "price": 0.99, "timestamp": _epoch(2025, 6, 20)},  # after resolution
         ])
-        panel = build_polymarket_panel(quant_path, markets_path, category_map={})
+        panel = build_polymarket_panel(quant_path, markets_path)
         assert len(panel) == 1
         assert panel["p"][0] == 0.6
 
@@ -160,7 +247,7 @@ def test_build_polymarket_panel_unmapped_category_stays_none_not_dropped():
         _write_quant_parquet(quant_path, [
             {"condition_id": "M1", "price": 0.5, "timestamp": _epoch(2025, 6, 10)},
         ])
-        panel = build_polymarket_panel(quant_path, markets_path, category_map={"Weather": "Climate and Weather"})
+        panel = build_polymarket_panel(quant_path, markets_path)
         assert len(panel) == 1
         assert panel["category"][0] is None
 
@@ -182,7 +269,7 @@ def test_build_polymarket_panel_supports_real_outcome_prices_column_shape(tmp_pa
         {"condition_id": "M1", "price": 0.99, "timestamp": _epoch(2025, 6, 14)},
         {"condition_id": "M2", "price": 0.01, "timestamp": _epoch(2025, 6, 15)},
     ])
-    panel = build_polymarket_panel(quant_path, markets_path, category_map={})
+    panel = build_polymarket_panel(quant_path, markets_path)
     assert set(panel["ticker"].to_list()) == {"M1", "M2"}
     m1 = panel.filter(pl.col("ticker") == "M1").row(0, named=True)
     m2 = panel.filter(pl.col("ticker") == "M2").row(0, named=True)
@@ -212,7 +299,7 @@ def test_build_polymarket_panel_prefilters_by_date_with_native_datetime_column(t
         "timestamp": [_epoch(2025, 6, 10), _epoch(2026, 2, 20)],
     }).write_parquet(quant_path)
 
-    panel = build_polymarket_panel(quant_path, markets_path, category_map={})
+    panel = build_polymarket_panel(quant_path, markets_path)
     assert panel["ticker"].to_list() == ["IN-WINDOW"]
     assert panel.row(0, named=True)["p"] == 0.6
 
@@ -238,7 +325,7 @@ def test_build_polymarket_panel_empty_result_returns_empty_schema_frame(tmp_path
         {"condition_id": "M1", "outcome": None, "end_date_iso": "2025-06-15T00:00:00Z", "category": "Weather"},
     ])
     _write_quant_parquet(quant_path, [{"condition_id": "M1", "price": 0.5, "timestamp": _epoch(2025, 6, 1)}])
-    panel = build_polymarket_panel(quant_path, markets_path, category_map={})
+    panel = build_polymarket_panel(quant_path, markets_path)
     assert panel.is_empty()
     assert set(panel.columns) >= {"ticker", "event_ticker", "y", "p"}
 

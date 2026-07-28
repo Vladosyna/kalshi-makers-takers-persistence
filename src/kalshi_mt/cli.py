@@ -851,7 +851,13 @@ def final_report() -> None:
     the Polymarket control venue (if its bootstrap files have been
     downloaded), and the S5 escalation determination. Writes
     reports/final/draft.md."""
-    from kalshi_mt.control.polymarket import CAVEATS, COVERAGE_GAP_STATEMENT, build_polymarket_panel, monthly_psi_path
+    from kalshi_mt.control.polymarket import (
+        CAVEATS,
+        COVERAGE_GAP_STATEMENT,
+        build_polymarket_panel,
+        load_category_rules,
+        monthly_psi_path,
+    )
     from kalshi_mt.report.final import build_final_report_markdown, write_final_report
     from kalshi_mt.util import PROJECT_ROOT
 
@@ -866,7 +872,12 @@ def final_report() -> None:
     quant_path, markets_path = bootstrap_dir / "quant.parquet", bootstrap_dir / "markets.parquet"
     control_monthly_psi = None
     if quant_path.exists() and markets_path.exists():
-        panel = build_polymarket_panel(quant_path, markets_path)
+        # The strata come from the versioned text rules; without them every
+        # control row is category=None and S2.4's by-category breakdown is
+        # empty (which is what happened until 2026-07-28).
+        panel = build_polymarket_panel(
+            quant_path, markets_path, category_rules=load_category_rules()
+        )
         control_monthly_psi = [
             {"month": r.month, "result": None if r.result is None else {
                 "psi": r.result.psi, "n": r.result.n, "n_clusters": r.result.n_clusters,

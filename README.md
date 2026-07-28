@@ -192,6 +192,10 @@ so it is not hand-written. These regenerate it and the evidence behind it:
 | `tools/fetch_series_fee_catalog.py` | Freezes per-series `fee_type`/`fee_multiplier` for all ~12k series from Kalshi's API into `data/series_fee_catalog.json` |
 | `tools/build_fees_yaml.py` | Generates `data/fees.yaml` from the two above — **do not hand-edit the YAML** |
 | `tools/measure_fee_model_impact.py` | Prices R1's panel under both BDW's stated fee model and Kalshi's published schedule, band by band |
+| `tools/measure_maker_fee_treatment.py` | Treated share of the R2 universe by month, and a join check that the fee schedule's series names match collected ones |
+| `tools/measure_mismatch_filter.py` | All four readings of BDW's 63-contract mismatch filter, against their 0.136% rate |
+| `tools/measure_polymarket_categories.py` | Control-venue strata coverage, with per-stratum samples to judge the rules on |
+| `tools/check_panel_determinism.py` | Builds the R1 panel twice and compares rows, prices, order sizes and taker sides |
 
 `fetch_fee_schedule_history.py` needs `pypdf` for the parsing half (the
 archiving half is stdlib-only); it is deliberately not a project dependency,

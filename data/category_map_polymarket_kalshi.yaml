@@ -1,48 +1,150 @@
-# Polymarket category/tag -> Kalshi category string (docs/analysis_plan.md
-# S2.4's control-venue overlay, src/kalshi_mt/control/polymarket.py).
+# Polymarket -> Kalshi category mapping (docs/analysis_plan.md S2.4's
+# control-venue overlay, src/kalshi_mt/control/polymarket.py).
 #
-# [VERIFY] best-effort mapping: this repo has not yet collected a real
-# sample of Kalshi's own native `category` strings (Pass 1's series/category
-# resolution is still running as of this file's creation -- see
-# fetch/pass1.py's resolve_series_and_category; Kalshi's categories come
-# dynamically from its own API and are not a hardcoded enum anywhere in this
-# codebase). The Kalshi-side values below are Kalshi's publicly documented
-# category taxonomy (kalshi.com's own site navigation as of research time);
-# the Polymarket-side keys follow the sibling Polymarket forecast lab's own
-# CLAUDE.md S3 priority-tier vocabulary (economic data & central-bank
-# decisions, weather, long-horizon politics/geopolitics, entertainment/
-# awards). Revise this map once resolve_series_and_category has populated
-# real category strings in data/kmt.db -- do not treat it as final.
+# VERSION 2, 2026-07-28. Version 1 mapped Polymarket CATEGORY STRINGS to Kalshi
+# ones. That map could never fire: the SII-WANGZJ archive's markets.parquet has
+# no category column at all -- verified against the real 26GB download -- only
+# `question`, `slug`, `event_slug` and `event_title` free text. Every panel row
+# therefore came back with category = NULL, and the by-category breakdown S2.4
+# calls for did not exist.
 #
-# An R2-side category with no entry here is not an error: control/
-# polymarket.py's build_polymarket_panel leaves `category` as None for any
-# unmapped Polymarket row rather than dropping it -- S2.4's headline monthly
-# psi path is market-wide, not category-interacted, so an incomplete map
-# degrades only a descriptive breakdown, never the headline itself.
+# Version 2 maps TEXT to Kalshi categories instead, which is the only signal
+# the archive actually carries. Two further corrections came with it:
+#
+#   * The Kalshi-side values in version 1 were the taxonomy from Kalshi's site
+#     navigation, guessed before this repo had collected any. They were wrong
+#     in both directions: "Culture" does not exist in Kalshi's data, while
+#     Exotics, Financials, Mentions, Commodities, Transportation, Companies,
+#     Social and Education were missing. The list below is the real one,
+#     observed in data/kmt.db across the R1+R2 universe.
+#   * The vocabulary is built from measured token frequencies over the 210,366
+#     Polymarket markets resolving inside the control window, not from
+#     intuition about what Polymarket trades.
+#
+# HOW IT IS APPLIED: rules are tried IN ORDER against a lowercased join of
+# event_slug + event_title + question, first match wins, and a market matching
+# nothing keeps category = NULL rather than being dropped or forced into a
+# bucket. Order therefore encodes precedence, not importance -- the specific
+# patterns must precede the general ones that would otherwise swallow them.
+#
+# WHAT THIS IS NOT: a claim that Polymarket's markets ARE Kalshi's categories.
+# It is a stratification of one venue's markets into the other's vocabulary so
+# the two can be compared stratum by stratum. S2.4's headline monthly psi path
+# is market-wide and does not depend on it at all; this feeds the secondary
+# breakdown, and its coverage is reported alongside any figure that uses it.
 
-version: 1
+version: 2
 
-map:
-  Politics: Politics
-  Elections: Politics
-  Geopolitics: World
-  World: World
-  Economics: Economics
-  Economy: Economics
-  Fed: Economics
-  Inflation: Economics
-  Weather: Climate and Weather
-  Climate: Climate and Weather
-  Entertainment: Entertainment
-  Awards: Entertainment
-  Culture: Culture
-  Science: Science and Technology
-  Technology: Science and Technology
-  Health: Health
-  Sports: Sports
-  # Crypto/equity price-target markets are structurally excluded from both
-  # labs' forecast universes (Claude.md S3 "excluded as structurally
-  # unforecastable" / this repo's own R1/R2 category filters) -- listed here
-  # only so an unmapped Crypto row is a deliberate exclusion, not an
-  # oversight, if it ever reaches this module.
-  Crypto: Crypto
+# Kalshi's own category strings, as they appear in data/kmt.db. Any `category`
+# emitted by a rule below must be one of these -- control/polymarket.py
+# validates that on load rather than letting a typo create a phantom stratum.
+kalshi_categories:
+  - Sports
+  - Crypto
+  - Exotics
+  - Financials
+  - Climate and Weather
+  - Entertainment
+  - Mentions
+  - Commodities
+  - Economics
+  - Politics
+  - Elections
+  - Science and Technology
+  - World
+  - Health
+  - Transportation
+  - Companies
+  - Social
+  - Education
+
+rules:
+  # --- Crypto first: it is the archive's largest block and its price/updown
+  # --- vocabulary overlaps with Financials, so it must win those collisions.
+  - category: Crypto
+    patterns:
+      - '\b(bitcoin|btc|ethereum|eth|solana|sol|xrp|ripple|dogecoin|doge|cardano|ada)\b'
+      - '\b(litecoin|ltc|polkadot|avalanche|avax|chainlink|shiba|memecoin|altcoin)\b'
+      - '\b(crypto|cryptocurrency|stablecoin|defi|nft|binance|coinbase|etf-approval)\b'
+
+  # --- Sports: leagues, competitions, and the match-format vocabulary.
+  - category: Sports
+    patterns:
+      - '\b(nba|wnba|nfl|mlb|nhl|mls|ncaa|cbb|cfb|cwbb|cbbw|ufc|mma|boxing)\b'
+      - '\b(fifa|uefa|epl|laliga|bundesliga|seriea|ligue|champions-league|club-world-cup)\b'
+      - '\b(atp|wta|wimbledon|roland-garros|us-open|australian-open|tennis)\b'
+      - '\b(pga|masters|ryder-cup|golf|f1|formula-one|grand-prix|nascar|indy)\b'
+      - '\b(olympic|olympics|world-cup|super-bowl|stanley-cup|playoffs|finals-mvp)\b'
+      - '\b(esports|dota|league-of-legends|counter-strike|valorant|overwatch)\b'
+      - '\b(vs|beat|win-by|method-of-win|exact-score|point-spread|moneyline)\b'
+
+  # --- Mentions: Polymarket's "will X say Y" and tweet-count markets, which
+  # --- Kalshi runs as its own Mentions category rather than as Politics.
+  - category: Mentions
+    patterns:
+      - '\b(tweets|tweet|mention|mentions|say|says|said)\b'
+
+  - category: Climate and Weather
+    patterns:
+      - '\b(temperature|temperatures|weather|rainfall|snowfall|hurricane|tornado)\b'
+      - '\b(heat-index|highest-temperature|lowest-temperature|climate|wildfire)\b'
+
+  - category: Elections
+    patterns:
+      - '\b(election|elections|primary|primaries|nominee|nomination|ballot)\b'
+      - '\b(presidential-race|midterms|electoral|vote-share|wins-the-state)\b'
+
+  - category: Economics
+    patterns:
+      - '\b(fed|fomc|interest-rate|rate-cut|rate-hike|inflation|cpi|pce)\b'
+      - '\b(unemployment|payrolls|jobs-report|gdp|recession|treasury-yield)\b'
+
+  - category: Financials
+    patterns:
+      - '\b(earnings|stock|stocks|nasdaq|s-and-p|sp500|dow|ipo|share-price)\b'
+      - '\b(market-cap|valuation|revenue|acquisition|merger)\b'
+
+  - category: Commodities
+    patterns:
+      # KNOWN AMBIGUITY, left as it is rather than patched: a 2025 tariff
+      # market naming a metal ("50% copper tariff in effect by August 1?")
+      # lands here, while the otherwise identical "35% Canada tariff" lands in
+      # Politics. Both readings are defensible -- the market is about trade
+      # policy AND about a commodity -- and no rule ordering fixes that
+      # without making the other case wrong. Measured share of the control
+      # window: 0.1%, so it cannot move a stratified comparison; recorded so a
+      # reader who spots it knows it was seen rather than missed.
+      - '\b(oil|crude|wti|brent|gasoline|natural-gas|gold|silver|copper|wheat)\b'
+
+  - category: Entertainment
+    patterns:
+      - '\b(oscar|oscars|emmy|emmys|grammy|grammys|golden-globe|box-office)\b'
+      - '\b(rotten-tomatoes|billboard|spotify|netflix|movie|album|song|tour-dates)\b'
+
+  - category: Science and Technology
+    patterns:
+      # NOT a bare 'launch': "will Israel launch a major ground offensive in
+      # Gaza" matched it and landed in Science instead of World. Caught by
+      # test_shipped_rules_classify_real_polymarket_slugs, which is why that
+      # test uses slugs copied verbatim out of the archive.
+      - '\b(spacex|nasa|rocket|satellite|starship|artemis|orbit)\b'
+      - '\b(openai|gpt|llm|artificial-intelligence|agi|anthropic|deepmind|gemini)\b'
+      - '\b(grok|llama|claude|xai|mistral|deepseek|sora|copilot|chatbot)\b'
+
+  - category: Health
+    patterns:
+      - '\b(covid|pandemic|vaccine|outbreak|measles|flu|bird-flu|h5n1|fda-approval)\b'
+
+  - category: World
+    patterns:
+      - '\b(israel|gaza|ukraine|russia|nato|china|taiwan|iran|north-korea|venezuela)\b'
+      - '\b(ceasefire|invasion|coup|sanctions|treaty|summit|geopolitic)\b'
+
+  # --- Politics LAST among the substantive rules: its vocabulary (names of
+  # --- officeholders, "will X resign") appears inside election, world and
+  # --- mentions markets too, so anything more specific must have had its turn.
+  - category: Politics
+    patterns:
+      - '\b(trump|biden|harris|congress|senate|house-of-representatives|supreme-court)\b'
+      - '\b(impeach|resign|cabinet|executive-order|shutdown|tariff|tariffs|legislation)\b'
+      - '\b(president|presidency|governor|mayor|parliament|prime-minister)\b'
