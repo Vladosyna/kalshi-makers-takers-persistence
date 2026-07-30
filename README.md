@@ -197,6 +197,7 @@ so it is not hand-written. These regenerate it and the evidence behind it:
 | `tools/measure_polymarket_categories.py` | Control-venue strata coverage, with per-stratum samples to judge the rules on |
 | `tools/check_panel_determinism.py` | Builds the R1 panel twice and compares rows, prices, order sizes and taker sides |
 | `tools/r2_readiness.py` | Which R2 months are **analysable** (quoted + spread-passing + taped), and whether each boundary is ready |
+| `tools/measure_endpoint_families.py` | Which trade endpoint answers by market age, how many markets need both, and how many are permanently unquotable |
 
 `fetch_fee_schedule_history.py` needs `pypdf` for the parsing half (the
 archiving half is stdlib-only); it is deliberately not a project dependency,

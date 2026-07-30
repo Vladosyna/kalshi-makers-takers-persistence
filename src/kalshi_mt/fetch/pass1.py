@@ -561,12 +561,26 @@ async def _last_trade_before(
     `prefer` exists because the live /markets/trades endpoint only serves the
     most recent ~60 days; for a market whose trades predate that window every
     live probe returns empty and pays a wasted round-trip before the
-    historical fallback. A single market's 10-day panel never straddles the
-    ~60-day live/historical cutoff, so fetch_price_panel determines the family
-    once on the closing-day trade and passes it as `prefer` for all 10
-    lookback days -- halving the trade calls for pre-cutoff markets while the
-    fallback still covers the rare market whose window brackets the cutoff.
-    Same family-once idea pass2.fetch_full_tape_for_market already uses."""
+    historical fallback. fetch_price_panel therefore determines the family once
+    on the closing-day trade and passes it as `prefer` for all 10 lookback
+    days. Same family-once idea pass2.fetch_full_tape_for_market already uses.
+
+    MEASURED 2026-07-30, correcting this docstring's earlier claim that a single
+    market's 10-day panel "never" straddles the cutoff: **1,922 of 171,548
+    markets (1.1%) have panel rows from BOTH families**, so within one market a
+    family that answers for one day returns nothing for another. Those are the
+    markets whose 10-day window brackets the retention boundary. THE FALLBACK IS
+    WHAT MAKES THEM WHOLE -- it is not a rare-case nicety, and any future
+    optimization that caches one family per market must keep it or silently
+    lose ~1% of panel rows.
+
+    The family is otherwise near-deterministic in market age, which is why the
+    once-per-market choice is cheap and safe: across every month closing
+    2025-12 or earlier, live answered ZERO times in 141,000+ panel rows, while
+    2026-06 is 99.9% live. An available follow-up (not taken while a multi-day
+    fetch is in flight) is to seed `prefer` from the close date instead of
+    paying a live probe that always misses for old markets -- worth ~1 request
+    per market."""
     families = ("live", "historical") if prefer == "live" else ("historical", "live")
     for family in families:
         fetch = client.get_trades if family == "live" else client.get_historical_trades
