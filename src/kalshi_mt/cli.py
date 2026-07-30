@@ -18,7 +18,7 @@ import sys
 
 import typer
 
-from kalshi_mt.util import load_config, setup_logging, use_stable_event_loop
+from kalshi_mt.util import keep_system_awake, load_config, setup_logging, use_stable_event_loop
 
 use_stable_event_loop()
 
@@ -261,7 +261,12 @@ def fetch_pass1(
             await client.aclose()
             conn.close()
 
-    stats = asyncio.run(_run())
+    # A wake lock for the duration. Without it this host's Modern Standby froze
+    # a healthy-looking collector for ~22 of every 25 hours, with no error and
+    # nothing but throughput to show it (util.keep_system_awake's docstring has
+    # the measurement).
+    with keep_system_awake("pass 1 fetch"):
+        stats = asyncio.run(_run())
     typer.echo(json.dumps(stats, indent=2, default=str))
 
 
@@ -315,7 +320,8 @@ def fetch_pass2(
             await client.aclose()
             conn.close()
 
-    stats = asyncio.run(_run())
+    with keep_system_awake("pass 2 fetch"):
+        stats = asyncio.run(_run())
     typer.echo(json.dumps({k: v for k, v in stats.items() if k != "results"}, indent=2, default=str))
 
 

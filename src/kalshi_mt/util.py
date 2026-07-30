@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import logging.handlers
@@ -25,6 +26,77 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # UTC offset (or pytz's eager-localization model) would silently drift by an
 # hour on exactly the days that matter most for this kind of panel.
 ET = ZoneInfo("America/New_York")
+
+
+@contextlib.contextmanager
+def keep_system_awake(reason: str = "kalshi-mt collection"):
+    """Ask Windows not to enter IDLE sleep while a long fetch is running.
+
+    Why this exists, measured rather than assumed. On 2026-07-30 the collector
+    looked healthy -- alive for 26 hours, no crash, no error, requests flowing
+    at ~8/s whenever observed -- while the database advanced by 1,191 markets in
+    a day. The log explained it: hour-long blocks with zero requests, 16 hours
+    of silence in one stretch. `powercfg /a` reports this host as
+    "Standby (S0 Low Power Idle) Network Connected" -- Modern Standby -- and the
+    Kernel-Power resume events line up exactly with the log's activity bursts.
+    The process was not slow; it was FROZEN, for roughly 22 of every 25 hours.
+
+    Neither liveness nor log-freshness catches that, because the watchdog
+    sleeps too: on resume both processes continue and nothing looks wrong. The
+    only symptom is throughput, which is why `tools/r2_readiness.py` exists and
+    why fetch commands hold this request.
+
+    Honest about its limits: a process power request defers IDLE transitions.
+    It does NOT override a user-initiated sleep, a lid close, or an
+    administrator's power policy, and on Modern Standby the OS retains more
+    discretion than it had under S3. `powercfg /requests` shows the request
+    while it is held. Where a guarantee is needed, the operator disables
+    standby for the duration -- a system setting, and theirs to change.
+
+    A no-op on non-Windows platforms, and never fatal: if the API call fails
+    the fetch proceeds, because a collector that refuses to run without a wake
+    lock is worse than one that might be paused.
+    """
+    if sys.platform != "win32":
+        yield False
+        return
+
+    import ctypes
+
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
+    ES_AWAYMODE_REQUIRED = 0x00000040
+
+    log = logging.getLogger(__name__)
+    try:
+        kernel32 = ctypes.windll.kernel32
+        # Away mode first: it is the flag meant for unattended background work
+        # and is what Modern Standby honours for it. Plain ES_SYSTEM_REQUIRED is
+        # the fallback for hosts that reject away mode.
+        held = bool(kernel32.SetThreadExecutionState(
+            ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED
+        ))
+        if not held:
+            held = bool(kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED))
+    except Exception as exc:  # noqa: BLE001 - never fatal, see docstring
+        log.warning("could not request a wake lock (%s): %r", reason, exc)
+        yield False
+        return
+
+    if held:
+        log.info("holding a wake lock for %s -- visible in `powercfg /requests`", reason)
+    else:
+        log.warning(
+            "wake lock refused for %s; this host may sleep mid-fetch and freeze the "
+            "collector without any error appearing in the log", reason,
+        )
+    try:
+        yield held
+    finally:
+        try:
+            ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+        except Exception:  # noqa: BLE001 - releasing is best-effort
+            pass
 
 
 def epoch_to_et(epoch: int) -> datetime:
