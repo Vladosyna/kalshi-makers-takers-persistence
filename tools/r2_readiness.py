@@ -20,8 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from kalshi_mt.store import db  # noqa: E402
-from kalshi_mt.util import load_config  # noqa: E402
+from kalshi_mt.store.db import connect_read_only  # noqa: E402
 
 SCOPE = "volume_fp >= 1000 AND (close_time_epoch - open_time_epoch) >= 86400"
 # The two boundaries a delta is measured at (analysis_plan.md S2.1, Addendum 3).
@@ -29,8 +28,7 @@ BOUNDARIES = {"2025-05": "fee (2025-05-13)", "2025-09": "publication (2025-09-08
 
 
 def main() -> int:
-    config = load_config()
-    conn = db.connect(config["storage"]["db_path"])
+    conn = connect_read_only()
     try:
         rows = conn.execute(
             f"""

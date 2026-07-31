@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from kalshi_mt.store import db  # noqa: E402
+from kalshi_mt.store.db import connect_read_only  # noqa: E402
 from kalshi_mt.store.parquet import TradeStore  # noqa: E402
 from kalshi_mt.util import load_config  # noqa: E402
 
@@ -40,7 +40,7 @@ BDW_CONTRACTS = 46282
 
 def main() -> int:
     config = load_config()
-    conn = db.connect(config["storage"]["db_path"])
+    conn = connect_read_only()
     try:
         rows = conn.execute(
             """

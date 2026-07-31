@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from kalshi_mt.fees.schedule import FeeScheduleGapError, entry_for, load_fee_schedule  # noqa: E402
-from kalshi_mt.store import db  # noqa: E402
+from kalshi_mt.store.db import connect_read_only  # noqa: E402
 from kalshi_mt.util import load_config  # noqa: E402
 
 SCOPE = "volume_fp >= 1000 AND (close_time_epoch - open_time_epoch) >= 86400"
@@ -35,7 +35,7 @@ SCOPE = "volume_fp >= 1000 AND (close_time_epoch - open_time_epoch) >= 86400"
 def main() -> int:
     schedule = load_fee_schedule()
     config = load_config()
-    conn = db.connect(config["storage"]["db_path"])
+    conn = connect_read_only()
     try:
         rows = conn.execute(
             f"SELECT series_ticker, close_time_epoch, volume_fp FROM markets "

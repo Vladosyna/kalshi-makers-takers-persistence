@@ -253,6 +253,31 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+def connect_read_only(db_path: str | Path | None = None) -> sqlite3.Connection:
+    """A connection that CANNOT write, for reporting and measurement.
+
+    `connect` above runs the schema script and the ADD COLUMN migrations, so it
+    takes a WRITE lock even when the caller only wants to count rows. Against a
+    collector that writes continuously that is a real collision: observed
+    2026-07-31, a status report failed with "database is locked" after the 10s
+    busy_timeout, purely because a read-only tool asked for write access it
+    never needed -- and in the other direction it could equally have stalled the
+    collector.
+
+    A tool that describes a collection must not be able to interfere with it.
+    Anything under tools/ that only reads should use this."""
+    if db_path is None:
+        from kalshi_mt.util import load_config
+
+        db_path = load_config()["storage"]["db_path"]
+    path = Path(db_path)
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=30)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def upsert_market(conn: sqlite3.Connection, row: dict) -> None:
     """Idempotent market upsert; preserves first_seen_ts across re-syncs."""
     conn.execute(

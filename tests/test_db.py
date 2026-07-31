@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from kalshi_mt.store import db
 
 
@@ -202,3 +204,38 @@ def test_pass2_progress_roundtrip(tmp_path):
     row = db.get_pass2_progress(conn, "ABC-1")
     assert row["status"] == "in_progress"
     assert row["trade_count"] == 50
+
+
+def test_connect_read_only_cannot_write(tmp_path):
+    """A reporting tool must not be able to interfere with the collection it
+    describes. store.db.connect runs migrations and takes a WRITE lock, which
+    on 2026-07-31 made a status report fail with "database is locked" against a
+    running collector -- and could equally have stalled the collector."""
+    import pytest
+
+    from kalshi_mt.store.db import connect, connect_read_only, upsert_market
+
+    path = tmp_path / "t.db"
+    writer = connect(path)
+    upsert_market(writer, {"ticker": "A-1", "in_r1_window": 1})
+    writer.commit()
+    writer.close()
+
+    reader = connect_read_only(path)
+    assert reader.execute("SELECT COUNT(*) FROM markets").fetchone()[0] == 1
+    with pytest.raises(sqlite3.OperationalError):
+        reader.execute("INSERT INTO markets(ticker) VALUES ('B-1')")
+    reader.close()
+
+
+def test_connect_read_only_does_not_create_a_missing_database(tmp_path):
+    """Opening read-only must not conjure an empty database that later looks
+    like a real one with no rows."""
+    import pytest
+
+    from kalshi_mt.store.db import connect_read_only
+
+    missing = tmp_path / "nope.db"
+    with pytest.raises(sqlite3.OperationalError):
+        connect_read_only(missing)
+    assert not missing.exists()
