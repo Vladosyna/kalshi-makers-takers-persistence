@@ -114,14 +114,56 @@ def test_base_client_does_not_retry_on_404():
     asyncio.run(_run())
 
 
-def test_base_client_exhausts_after_5_attempts():
+def test_base_client_exhausts_after_the_configured_attempts():
+    """Asserts against the configured budget rather than a literal, so raising
+    it for a real reason (2026-07-31: five attempts collapsed into 16 seconds
+    and lost a collector to a post-resume DNS gap) does not look like a
+    regression here."""
+    from kalshi_mt.api.http import _RETRY_ATTEMPTS
+
     handler, calls = _sequenced_handler([(500, {"error": "boom"})])
 
     async def _run():
         client = _client_with_mock_transport(handler)
         with patch("asyncio.sleep", _instant_sleep), pytest.raises(httpx.HTTPStatusError):
             await client.get_json("/x")
-        assert calls["n"] == 5
+        assert calls["n"] == _RETRY_ATTEMPTS
         await client.aclose()
 
     asyncio.run(_run())
+
+
+def test_dns_failure_is_retryable():
+    """`getaddrinfo failed` killed a collector relaunched seconds after the host
+    resumed from sleep. It arrives as httpx.ConnectError, a TransportError."""
+    import httpx
+
+    from kalshi_mt.api.http import _is_retryable
+
+    assert _is_retryable(httpx.ConnectError("[Errno 11001] getaddrinfo failed"))
+
+
+def test_retry_budget_outlasts_a_post_resume_network_gap():
+    """The policy was never wrong about WHAT to retry -- it gave up too fast.
+    wait_random_exponential draws from [0, 2^n], so five attempts collapsed into
+    16 seconds while DNS was still coming back. The floor is what fixes it."""
+    from kalshi_mt.api.http import _RETRY_ATTEMPTS, _RETRY_WAIT
+
+    class _State:
+        def __init__(self, n):
+            self.attempt_number = n
+            self.outcome = None
+            self.idle_for = 0.0
+            self.seconds_since_start = 0.0
+
+    waits = [_RETRY_WAIT(_State(n)) for n in range(1, _RETRY_ATTEMPTS)]
+    assert all(w >= 2.0 for w in waits), f"a wait with no floor defeats the point: {waits}"
+    # Enough total patience to cover a network stack coming back after resume.
+    assert sum(waits) >= 120.0, f"total retry window too short: {sum(waits):.1f}s"
+
+
+def test_retry_budget_stays_bounded():
+    """A genuinely dead endpoint must still fail rather than retry forever."""
+    from kalshi_mt.api.http import _RETRY_ATTEMPTS
+
+    assert _RETRY_ATTEMPTS <= 10

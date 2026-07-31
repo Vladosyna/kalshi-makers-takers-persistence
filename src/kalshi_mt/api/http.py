@@ -22,7 +22,8 @@ from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_random_exponential,
+    wait_exponential,
+    wait_random,
 )
 
 log = logging.getLogger(__name__)
@@ -59,6 +60,21 @@ def _is_retryable(exc: BaseException) -> bool:
     return isinstance(exc, (httpx.TransportError, httpx.TimeoutException))
 
 
+# Retry budget, sized by the failure that actually killed a collector rather
+# than by intuition. On 2026-07-31 a run relaunched seconds after the host
+# resumed from sleep died on `ConnectError: [Errno 11001] getaddrinfo failed`
+# -- DNS was simply not up yet. ConnectError IS retryable above, so the policy
+# was not wrong about WHAT to retry; it was wrong about HOW LONG.
+# `wait_random_exponential` draws each wait from [0, 2^n], so five attempts
+# collapsed into 16 SECONDS and gave up while the network was still coming
+# back. A floor on the wait plus more attempts turns a post-resume DNS gap into
+# a pause instead of a crash: worst case here is a few minutes of patience,
+# which costs nothing on a multi-day collection and is bounded, so a genuinely
+# dead endpoint still fails rather than hanging forever.
+_RETRY_ATTEMPTS = 8
+_RETRY_WAIT = wait_exponential(multiplier=2, min=2, max=60) + wait_random(0, 2)
+
+
 class BaseClient:
     """Thin async JSON GET client over one base URL, rate-limited and retrying."""
 
@@ -71,8 +87,8 @@ class BaseClient:
 
     @retry(
         retry=retry_if_exception(_is_retryable),
-        wait=wait_random_exponential(multiplier=1, max=60),
-        stop=stop_after_attempt(5),
+        wait=_RETRY_WAIT,
+        stop=stop_after_attempt(_RETRY_ATTEMPTS),
         reraise=True,
     )
     async def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
