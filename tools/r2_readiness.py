@@ -9,6 +9,12 @@ percentage as progress hid that completely.
 
 Run this before believing any statement about R2 being ready.
 
+A quoted count never reaches its eligible count: 32 markets return 404
+permanently from Kalshi and so never get a quotes row (measured 2026-08-01,
+phase 1 ended at 103,809 of 103,841 having processed everything it could).
+Read the numbers below as coverage, not as a completion test -- a phase is
+finished when the collector returns cleanly, which it reports itself.
+
 Usage:
     python tools/r2_readiness.py
 """

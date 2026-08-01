@@ -222,13 +222,27 @@ Start-Process -FilePath .\.venv\Scripts\kmt.exe `
 
 Nothing is lost when a run does die: every phase is resumable from its own
 checkpoint, and the panel/quote phase's resume predicate is `ticker NOT IN
-quotes` — the row that `fetch_closing_quote` writes last and always, even when
-no quote is retrievable. That last part is what makes "no work left" a
-decidable question (`eligible == quoted`) rather than a coverage ratio that
-structural gaps would keep below 100% forever. A restart-on-crash watchdog
-should key on that count, not on the ratio, and should also treat a stalled
-log as a hang: the process tree is `kmt.exe → python.exe → python.exe`, so a
-wedged worker can leave the top-level process alive.
+quotes` — the row `fetch_closing_quote` writes last, after the panel rows.
+
+**Do not treat `eligible == quoted` as "no work left".** This README said so
+until 2026-08-01, on the reasoning that the quote row is written *always*, even
+when no quote is retrievable. It is not written when the fetch raises before
+reaching it: 32 markets (`KXMLBMENTION-25OCT25-*`) return 404 permanently from
+Kalshi, so the count stops short of eligible **forever**. A watchdog keying on
+that equality calls a clean finish a crash and restarts a completed phase —
+which is exactly what happened, at 103,809 of 103,841.
+
+The reliable completion signal is the collector's own clean return: it prints a
+stats JSON to stdout on success and nothing on a crash, and that JSON carries
+`markets_failed` (32 here) so the residue is reported rather than inferred.
+Useful properties for anything supervising a run:
+
+- a stalled log is a hang — the process tree is `kmt.exe → python.exe →
+  python.exe`, so a wedged worker can leave the top-level process alive;
+- **but a supervisor on a Modern Standby host sleeps too**, so before calling
+  a stale log a hang it must check whether *it* was suspended (compare its own
+  tick duration against the interval). Otherwise every host sleep is reported
+  as a collector hang and kills a healthy process.
 
 ## Analysis discipline
 
