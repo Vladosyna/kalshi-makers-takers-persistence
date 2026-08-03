@@ -40,7 +40,10 @@ MIN_OPEN_SECONDS = 24 * 3600
 ANALYSIS_WINDOW_COLUMNS = {"r1": "in_r1_window", "r2": "in_r2_window"}
 
 
-def select_in_scope_tickers(conn, window: str | None = None) -> list[str]:
+def select_in_scope_tickers(
+    conn, window: str | None = None,
+    close_from: int | None = None, close_to: int | None = None,
+) -> list[str]:
     """Markets meeting the volume/spread/open-duration proxy filter, that
     Pass 2 hasn't already finished. Requires an open_time and close_time
     (both needed for the open>=24h check) and a quote row (needed for the
@@ -54,10 +57,27 @@ def select_in_scope_tickers(conn, window: str | None = None) -> list[str]:
     reconciliation gate needs first (spec S1: count deltas before estimate
     deltas) -- confirmed live 2026-07-26: with R1's own panel/quote fetch
     freshly complete, in-scope candidates were R1=33,228 / R2=58,750, nearly
-    2:1 against R1. None keeps the original both-windows behaviour."""
+    2:1 against R1. None keeps the original both-windows behaviour.
+
+    `close_from`/`close_to` (epoch seconds, inclusive) narrow further by close
+    date, mirroring pass1's --panel-quote-close-from/-to and existing for the
+    same reason: a window's in-scope set is only FINAL once its quotes are
+    complete. Measured 2026-08-03, mid-collection: the R2 backlog was 152,090
+    markets, of which the boundary months (2025-05..2025-12, 100% quoted) were
+    a settled 67,337 while the 2026-01..04 part was still growing by thousands
+    an hour. Fetching tapes for a set that is still moving means re-running
+    later anyway; fetching the settled part first is what actually turns a
+    boundary READY."""
     scope_sql = ""
+    params: list[Any] = [MIN_VOLUME_FP, MAX_SPREAD, MIN_OPEN_SECONDS]
     if window is not None:
         scope_sql = f" AND m.{ANALYSIS_WINDOW_COLUMNS[window]} = 1"
+    if close_from is not None:
+        scope_sql += " AND m.close_time_epoch >= ?"
+        params.append(close_from)
+    if close_to is not None:
+        scope_sql += " AND m.close_time_epoch <= ?"
+        params.append(close_to)
     rows = conn.execute(
         f"""
         SELECT m.ticker
@@ -72,7 +92,7 @@ def select_in_scope_tickers(conn, window: str | None = None) -> list[str]:
           AND (p.status IS NULL OR p.status != 'done')
         {scope_sql}
         """,
-        (MIN_VOLUME_FP, MAX_SPREAD, MIN_OPEN_SECONDS),
+        params,
     ).fetchall()
     return [r[0] for r in rows]
 
@@ -152,12 +172,15 @@ async def run_pass2(
     client: KalshiClient, conn, trade_store: TradeStore,
     ticker_limit: int | None = None, max_pages_per_market: int | None = None,
     max_concurrent: int = 20, window: str | None = None,
+    close_from: int | None = None, close_to: int | None = None,
 ) -> dict[str, Any]:
     """Fetch full tapes for in-scope markets not yet done. `ticker_limit`
     bounds how many markets this invocation processes (each to completion,
     modulo `max_pages_per_market`) -- pass small values for verification
     runs rather than the full in-scope set. `window` ('r1' | 'r2' | None)
-    restricts to one analysis window -- see select_in_scope_tickers.
+    restricts to one analysis window, and `close_from`/`close_to` narrow
+    further by close date -- see select_in_scope_tickers for why the
+    date scoping matters while collection is still in flight.
 
     Different tickers' fetches run CONCURRENTLY (bounded by
     `max_concurrent`, sharing the client's TokenBucket) -- same latency-
@@ -167,7 +190,9 @@ async def run_pass2(
     single-threaded cooperative scheduling one call always runs to
     completion before another coroutine's code can execute -- there is no
     point where two concurrent tickers' writes can interleave mid-operation."""
-    tickers = select_in_scope_tickers(conn, window=window)
+    tickers = select_in_scope_tickers(
+        conn, window=window, close_from=close_from, close_to=close_to
+    )
     if ticker_limit is not None:
         tickers = tickers[:ticker_limit]
 

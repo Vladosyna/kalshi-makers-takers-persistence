@@ -270,3 +270,51 @@ def test_run_pass2_one_ticker_failure_does_not_lose_others_progress(tmp_path):
     # FLAKY has no completed checkpoint, so select_in_scope_tickers picks
     # it back up next invocation instead of it being silently lost.
     assert set(pass2.select_in_scope_tickers(conn)) == {"FLAKY"}
+
+
+def test_select_in_scope_tickers_close_date_scoping(tmp_path):
+    """A window's in-scope set is only FINAL once its quotes are complete, so
+    Pass 2 needs to be able to target the settled part. Without this, a run
+    started mid-collection fetches tapes for a set that is still growing and
+    has to be re-run anyway."""
+    from kalshi_mt.fetch.pass2 import select_in_scope_tickers
+
+    conn = db.connect(tmp_path / "t.db")
+    # close epochs: 2025-06-01, 2025-12-01, 2026-03-01
+    for ticker, close_epoch in (("EARLY", 1748736000), ("MID", 1764547200), ("LATE", 1772323200)):
+        db.upsert_market(conn, {
+            "ticker": ticker, "volume_fp": 5000.0, "in_r2_window": 1,
+            "open_time_epoch": close_epoch - 10 * 86400, "close_time_epoch": close_epoch,
+        })
+        db.upsert_quote(conn, {
+            "ticker": ticker, "end_period_ts": close_epoch, "yes_bid_close": 0.4,
+            "yes_ask_close": 0.5, "spread": 0.10, "source": "live",
+        })
+    conn.commit()
+
+    assert set(select_in_scope_tickers(conn, window="r2")) == {"EARLY", "MID", "LATE"}
+    # The boundary months only.
+    got = select_in_scope_tickers(conn, window="r2", close_from=1746057600, close_to=1767225599)
+    assert set(got) == {"EARLY", "MID"}
+    # An open-ended lower bound still works.
+    assert set(select_in_scope_tickers(conn, window="r2", close_from=1767225600)) == {"LATE"}
+
+
+def test_select_in_scope_tickers_close_scoping_still_skips_done_markets(tmp_path):
+    from kalshi_mt.fetch.pass2 import select_in_scope_tickers
+
+    conn = db.connect(tmp_path / "t.db")
+    close_epoch = 1748736000
+    db.upsert_market(conn, {
+        "ticker": "DONE", "volume_fp": 5000.0, "in_r2_window": 1,
+        "open_time_epoch": close_epoch - 10 * 86400, "close_time_epoch": close_epoch,
+    })
+    db.upsert_quote(conn, {
+        "ticker": "DONE", "end_period_ts": close_epoch, "yes_bid_close": 0.4,
+        "yes_ask_close": 0.5, "spread": 0.10, "source": "live",
+    })
+    db.upsert_pass2_progress(conn, {
+        "ticker": "DONE", "status": "done", "cursor": None, "source": "live", "trade_count": 7,
+    })
+    conn.commit()
+    assert select_in_scope_tickers(conn, window="r2", close_from=1746057600, close_to=1767225599) == []

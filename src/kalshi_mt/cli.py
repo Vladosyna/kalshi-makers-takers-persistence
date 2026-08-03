@@ -286,6 +286,17 @@ def fetch_pass2(
              "gate needs first (spec S1). Pass 'r1' to fetch R1's remainder first. Omit for the "
              "original both-windows behaviour.",
     ),
+    close_from: str | None = typer.Option(
+        None, "--close-from",
+        help="Only fetch tapes for markets closing on or after this date (YYYY-MM-DD).",
+    ),
+    close_to: str | None = typer.Option(
+        None, "--close-to",
+        help="Only fetch tapes for markets closing on or before this date (YYYY-MM-DD). "
+             "Together with --close-from this restricts Pass 2 to a settled part of the "
+             "window: a month's in-scope set is only final once its quotes are complete, so "
+             "fetching tapes for months still being quoted means re-running later anyway.",
+    ),
 ) -> None:
     """Full trade tape for in-scope (volume/spread/duration-filtered) contracts
     only. Resumable per-market via pass2_progress."""
@@ -315,6 +326,8 @@ def fetch_pass2(
             return await run_pass2(
                 client, conn, trade_store, ticker_limit=ticker_limit,
                 max_pages_per_market=max_pages, window=window,
+                close_from=_parse_date_to_epoch(close_from, "--close-from"),
+                close_to=_parse_date_to_epoch(close_to, "--close-to", end_of_day=True),
             )
         finally:
             await client.aclose()
