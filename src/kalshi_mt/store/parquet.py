@@ -315,8 +315,7 @@ class TradeStore:
         # epochs callers compute with util.py's ET helpers.
         rows = con.execute(
             """
-            SELECT r.ticker, r.key, t.yes_price_dollars,
-                   CAST(epoch(CAST(t.created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch,
+            SELECT r.ticker, r.key, t.yes_price_dollars, t.created_epoch,
                    t.count_fp, t.taker_outcome_side
             FROM refs r
             ASOF JOIN (
@@ -329,16 +328,29 @@ class TradeStore:
                 -- happened to produce: measured 2026-07-28, two runs over an
                 -- unchanged tape returned the same 121,803 panel rows with
                 -- ~60 of them in DIFFERENT price bands. Every R1 number was
-                -- one draw from that. The tie-break below (smallest trade_id)
-                -- is arbitrary but FIXED, which is what determinism requires;
-                -- it is a construction pin, recorded in
-                -- docs/r1_reproduction_findings.md.
-                SELECT DISTINCT ON (ticker, created_epoch)
-                       ticker, yes_price_dollars, created_time, count_fp,
-                       taker_outcome_side, created_epoch
+                -- one draw from that. Smallest trade_id wins -- arbitrary but
+                -- FIXED, which is what determinism requires; a construction
+                -- pin, recorded in docs/r1_reproduction_findings.md.
+                --
+                -- Expressed as GROUP BY + arg_min rather than DISTINCT ON, and
+                -- that is a memory decision, not a style one. DISTINCT ON sorts
+                -- the whole filtered set; at 61.7M fills that sort hit the
+                -- memory limit and did NOT spill (three separate failures on
+                -- 2026-08-04, the last one still at the ceiling after the batch
+                -- was cut 4x -- proof the cost was not proportional to batch
+                -- size). A hash aggregate spills, and arg_min(value, trade_id)
+                -- expresses exactly the same tie-break.
+                --
+                -- The former inner `DISTINCT ON (trade_id)` is gone as
+                -- redundant: two rows sharing a trade_id necessarily share the
+                -- ticker and the instant, so this aggregate already collapses
+                -- them. It was a second full sort buying nothing.
+                SELECT ticker, created_epoch,
+                       arg_min(yes_price_dollars, trade_id) AS yes_price_dollars,
+                       arg_min(count_fp, trade_id) AS count_fp,
+                       arg_min(taker_outcome_side, trade_id) AS taker_outcome_side
                 FROM (
-                    SELECT DISTINCT ON (trade_id) trade_id, ticker, yes_price_dollars,
-                           created_time, count_fp, taker_outcome_side,
+                    SELECT trade_id, ticker, yes_price_dollars, count_fp, taker_outcome_side,
                            CAST(epoch(CAST(created_time AS TIMESTAMPTZ)) AS BIGINT) AS created_epoch
                     FROM read_parquet(?)
                     -- Restrict to the tickers actually asked about BEFORE the
@@ -349,7 +361,7 @@ class TradeStore:
                     WHERE ticker IN (SELECT ticker FROM refs)
                       AND yes_price_dollars IS NOT NULL AND created_time IS NOT NULL
                 )
-                ORDER BY ticker, created_epoch, trade_id
+                GROUP BY ticker, created_epoch
             ) t
               ON r.ticker = t.ticker AND r.ref_epoch >= t.created_epoch
             """,
