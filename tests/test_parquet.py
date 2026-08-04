@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from kalshi_mt.store.parquet import TradeStore, month_str
 
 
@@ -225,3 +227,55 @@ def test_last_trade_at_or_before_returns_nothing_before_the_first_fill(tmp_path)
     store = TradeStore(tmp_path / "parquet")
     store.append([_trade("t1", created_time="2022-12-30T10:00:00Z")])
     assert store.last_trade_at_or_before([("ABC-1", 0, _epoch("2022-12-30T09:00:00Z"))]) == {}
+
+
+def test_last_trade_at_or_before_batches_without_changing_the_answer(tmp_path, monkeypatch):
+    """Batching is a memory fix, not a semantic one: the same refs must give the
+    same answer whether they fit in one batch or are split across several. R2's
+    panel (126,087 markets, 61.7M fills) is what forced the split -- a single
+    ASOF join died with "Allocation failure" even with spilling configured."""
+    from kalshi_mt.store import parquet as parquet_mod
+
+    store = TradeStore(tmp_path / "parquet")
+    rows = []
+    for i in range(7):
+        rows.append(_trade(f"t{i}", ticker=f"M-{i}", created_time="2022-12-30T10:00:00Z",
+                           yes_price_dollars=0.10 + 0.05 * i))
+        rows.append(_trade(f"u{i}", ticker=f"M-{i}", created_time="2022-12-30T12:00:00Z",
+                           yes_price_dollars=0.60 + 0.05 * i))
+    store.append(rows)
+
+    refs = [(f"M-{i}", 0, _epoch("2022-12-30T11:00:00Z")) for i in range(7)]
+    monkeypatch.setattr(parquet_mod, "ASOF_TICKER_BATCH", 100)
+    single = store.last_trade_at_or_before(refs)
+    monkeypatch.setattr(parquet_mod, "ASOF_TICKER_BATCH", 2)
+    batched = store.last_trade_at_or_before(refs)
+
+    assert single == batched
+    assert len(single) == 7
+    # 11:00 sits between the two fills, so the 10:00 one is the answer.
+    assert single[("M-3", 0)][0] == pytest.approx(0.25)
+
+
+def test_last_trade_at_or_before_batches_keep_a_market_whole(tmp_path, monkeypatch):
+    """A market's lookback refs must never be split across batches -- each
+    batch filters the tape by its own ticker set, so a market answered from a
+    partial view would silently lose fills."""
+    from kalshi_mt.store import parquet as parquet_mod
+
+    store = TradeStore(tmp_path / "parquet")
+    store.append([
+        _trade("a", ticker="M-1", created_time="2022-12-30T09:00:00Z", yes_price_dollars=0.11),
+        _trade("b", ticker="M-1", created_time="2022-12-30T11:00:00Z", yes_price_dollars=0.22),
+        _trade("c", ticker="M-2", created_time="2022-12-30T09:00:00Z", yes_price_dollars=0.33),
+    ])
+    refs = [
+        ("M-1", 0, _epoch("2022-12-30T12:00:00Z")),
+        ("M-1", 1, _epoch("2022-12-30T10:00:00Z")),
+        ("M-2", 0, _epoch("2022-12-30T12:00:00Z")),
+    ]
+    monkeypatch.setattr(parquet_mod, "ASOF_TICKER_BATCH", 1)
+    got = store.last_trade_at_or_before(refs)
+    assert got[("M-1", 0)][0] == pytest.approx(0.22)
+    assert got[("M-1", 1)][0] == pytest.approx(0.11)
+    assert got[("M-2", 0)][0] == pytest.approx(0.33)

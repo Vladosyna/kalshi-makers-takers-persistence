@@ -207,6 +207,52 @@ CREATE INDEX IF NOT EXISTS idx_universe_log_reason ON universe_log(reason_code);
 """
 
 
+class UniverseLogNotBuiltError(RuntimeError):
+    """Raised when an analysis window's `universe_log` has no rows at all.
+
+    The in-scope idiom everywhere in this repo is `in_<w>_window = 1 AND ticker
+    NOT IN (SELECT ticker FROM universe_log WHERE window = '<w>')`. That reads
+    naturally and fails catastrophically quietly: an EMPTY exclusion list
+    excludes nothing, so the "in-scope" set silently becomes every market in
+    the window rather than the few that pass the filters.
+
+    Measured 2026-08-04: `kmt build` had never been run for R2, so
+    universe_log held 288,802 rows for r1 and ZERO for r2. The idiom therefore
+    returned 14,907,046 markets where the real in-scope set was 126,087 -- 118x
+    too many. A panel build over that set reached 10GB of RSS and 80 minutes of
+    CPU on a machine with 27.7GB before it was killed, having produced nothing.
+
+    Callers must raise this instead of proceeding, because the failure mode is
+    not an error but a plausible-looking, enormous, wrong answer.
+
+    Detected from a `meta` stamp written by replace_universe_exclusions, NOT
+    from the row count: a window where every market passed its filters has zero
+    exclusions and is perfectly valid, so refusing on an empty table would
+    reject a clean universe."""
+
+
+def in_scope_tickers(conn: sqlite3.Connection, window: str) -> set[str]:
+    """Markets in `window` that survived its filters, per `universe_log`.
+
+    Refuses rather than guesses when the log is empty for this window -- see
+    UniverseLogNotBuiltError. `kmt build` is what populates it, and it must run
+    before any analysis command for that window."""
+    column = {"r1": "in_r1_window", "r2": "in_r2_window"}[window]
+    if get_meta(conn, f"universe_built_{window}") is None:
+        raise UniverseLogNotBuiltError(
+            f"`kmt build` has not been run for window {window!r} (no "
+            f"universe_built_{window} stamp in meta), so the 'NOT IN "
+            "universe_log' in-scope filter would exclude nothing and silently "
+            f"treat EVERY {window} market as in scope. Run `kmt build` first."
+        )
+    rows = conn.execute(
+        f"SELECT ticker FROM markets m WHERE m.{column} = 1 "
+        "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = ?)",
+        (window,),
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str) -> None:
     """Idempotent `ALTER TABLE ADD COLUMN` -- the SCHEMA string's own
     CREATE TABLE IF NOT EXISTS is a no-op against a table that already
@@ -502,8 +548,14 @@ def replace_universe_exclusions(
     assumed it was) and what makes a re-pin take effect.
 
     Scoped strictly to `window`, so the primary and sensitivity branches --
-    which use different labels on purpose -- never disturb each other."""
+    which use different labels on purpose -- never disturb each other.
+
+    Also stamps `meta` with this window's build time. That stamp, not the row
+    count, is what in_scope_tickers checks: "no exclusions" is a legitimate
+    state (every market passed) and is NOT the same as "build never ran", and
+    conflating them would refuse to run on a perfectly clean universe."""
     conn.execute("DELETE FROM universe_log WHERE window = ?", (window,))
+    set_meta(conn, f"universe_built_{window}", now_utc_iso())
     if not exclusions:
         return 0
     now = now_utc_iso()

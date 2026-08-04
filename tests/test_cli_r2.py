@@ -99,6 +99,16 @@ def _seed_full_fixture(conn, trade_store):
         p = 0.10 + 0.08 * i  # 0.10 .. 0.42 -- result "no"
         _seed_r2_market(conn, f"R2-postP-{i}", "Weather", _epoch(2025, 10, 1) + i, p, "no", trade_store=trade_store)
 
+    # Stand in for `kmt build` having run and excluded nothing -- every market
+    # above is meant to be in scope. Without the stamp db.in_scope_tickers
+    # refuses, which is the point of that guard: an unbuilt universe_log
+    # excludes nothing, so "NOT IN universe_log" would silently admit every
+    # market in the window (measured on the real database: 14,907,046 against a
+    # true in-scope set of 126,087).
+    db.replace_universe_exclusions(conn, "r1", [])
+    db.replace_universe_exclusions(conn, "r2", [])
+    conn.commit()
+
 
 def _write_frozen_mix(path):
     path.parent.mkdir(parents=True, exist_ok=True)

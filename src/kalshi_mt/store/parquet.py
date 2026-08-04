@@ -26,6 +26,26 @@ log = logging.getLogger(__name__)
 
 COMPACT_AT_PARTS = 64
 
+# Deliberately well under the machine's RAM: this runs alongside a collector,
+# and DuckDB's default (80% of TOTAL RAM) is a budget the machine does not
+# actually have free. See _duckdb_connect.
+DUCKDB_MEMORY_LIMIT_GB = 6
+# Markets per ASOF-join batch in last_trade_at_or_before. Chunking by TICKER
+# (not by ref row) keeps all 11 of a market's lookback refs in the same batch,
+# so the parquet scan's ticker filter stays selective; chunking by ref would
+# smear one market across batches and re-read the tape for each.
+#
+# 5,000 rather than 20,000: at 20k the batch still blew the budget ("failed to
+# pin block of size 256.0 KiB (5.5 GiB/5.5 GiB used)", 2026-08-04). A batch
+# holds roughly batch_size x mean-fills-per-market rows before the dedup --
+# ~600 fills/market measured, so 5k markets is ~3M rows, comfortably inside the
+# limit. The cost is more passes over the tape, which is I/O the machine has.
+ASOF_TICKER_BATCH = 5_000
+# DuckDB sizes several buffers PER THREAD, so on a many-core machine the real
+# peak is a multiple of what one thread suggests. Capping threads trades some
+# speed for a peak that actually fits the budget above.
+DUCKDB_THREADS = 4
+
 
 def _duckdb_connect() -> duckdb.DuckDBPyConnection:
     """An in-memory DuckDB connection that can SPILL TO DISK.
@@ -40,11 +60,23 @@ def _duckdb_connect() -> duckdb.DuckDBPyConnection:
 
     The spill directory sits under the parquet root rather than the OS temp
     dir so it lands on the same (large) volume as the data itself.
+
+    An explicit memory_limit is set too, and it matters more than it looks.
+    DuckDB's default budget is 80% of TOTAL system RAM, which is the wrong
+    number whenever anything else is running -- on 2026-08-04, with a collector
+    holding memory and a 61.7M-fill tape, the panel build died with "Allocation
+    failure" despite having a spill directory: DuckDB thought it had far more
+    headroom than the machine actually had free, so it committed to an
+    in-memory plan instead of choosing to spill. A conservative fixed budget
+    makes spilling the planner's choice rather than a rescue that comes too
+    late.
     """
     con = duckdb.connect()
     spill = PROJECT_ROOT / "data" / "duckdb_spill"
     spill.mkdir(parents=True, exist_ok=True)
     con.execute(f"SET temp_directory = '{spill.as_posix()}'")
+    con.execute(f"SET memory_limit = '{DUCKDB_MEMORY_LIMIT_GB}GB'")
+    con.execute(f"SET threads = {DUCKDB_THREADS}")
     return con
 
 
@@ -243,9 +275,38 @@ class TradeStore:
         Uses DuckDB's ASOF JOIN, which is precisely "the latest row not after
         this timestamp" -- doing it per (ticker, ref) in Python would be ~365k
         scans over a multi-million-row tape. Same DuckDB-not-polars reasoning
-        as the aggregates above."""
+        as the aggregates above.
+
+        BATCHED BY TICKER, because one query stopped fitting. R1's panel (33k
+        markets against a 22M-fill tape) ran fine as a single ASOF join; R2's
+        (126,087 markets against 61.7M fills) died with "Allocation failure"
+        even with a spill directory configured. Batching bounds the working set
+        regardless of how large the tape grows, which a single query cannot do
+        -- the same lesson as pass1's keyset pagination, in a different place.
+
+        Batches are cut on TICKER boundaries so a market's 11 lookback refs
+        always resolve together: the tape scan's `ticker IN (...)` filter stays
+        selective, and no market can be answered from a partial view of its own
+        fills."""
         if not refs or not self.months_on_disk():
             return {}
+        by_ticker: dict[str, list[tuple[str, int, int]]] = {}
+        for ref in refs:
+            by_ticker.setdefault(ref[0], []).append(ref)
+        tickers = sorted(by_ticker)
+        out: dict[tuple[str, int], tuple[float, int, float, str]] = {}
+        for start in range(0, len(tickers), ASOF_TICKER_BATCH):
+            batch_refs = [
+                ref for ticker in tickers[start:start + ASOF_TICKER_BATCH]
+                for ref in by_ticker[ticker]
+            ]
+            out.update(self._last_trade_batch(batch_refs))
+        return out
+
+    def _last_trade_batch(
+        self, refs: list[tuple[str, int, int]],
+    ) -> dict[tuple[str, int], tuple[float, int, float, str]]:
+        """One ASOF-join batch. See last_trade_at_or_before for the contract."""
         con = _duckdb_connect()
         con.execute("CREATE TEMP TABLE refs(ticker VARCHAR, key BIGINT, ref_epoch BIGINT)")
         con.executemany("INSERT INTO refs VALUES (?, ?, ?)", refs)

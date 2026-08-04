@@ -376,12 +376,7 @@ def build() -> None:
         # it: at this stage our independently collected universe lands within
         # 0.1% of BDW's 12,403 events and 2.9% of their 46,282 contracts.
         filter_summary = apply_and_log(conn, window="r1", dollar_volume_by_ticker=None)
-        in_scope = {
-            r[0] for r in conn.execute(
-                "SELECT ticker FROM markets m WHERE m.in_r1_window = 1 "
-                "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r1')"
-            ).fetchall()
-        }
+        in_scope = db.in_scope_tickers(conn, "r1")
 
         # PRIMARY panel: backfill on no-trade lookback days (CLAUDE.md S3,
         # amended 2026-07-26). Built from Pass 2's tape, so no refetch.
@@ -475,12 +470,7 @@ def r1() -> None:
     config = load_config()
     conn = db.connect(config["storage"]["db_path"])
     try:
-        in_scope = {
-            r[0] for r in conn.execute(
-                "SELECT ticker FROM markets m WHERE m.in_r1_window = 1 "
-                "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r1')"
-            ).fetchall()
-        }
+        in_scope = db.in_scope_tickers(conn, "r1")
         trade_store = TradeStore(config["storage"]["parquet_dir"])
         # PRIMARY construction: backfill on no-trade lookback days
         # (CLAUDE.md S3, amended 2026-07-26). Must match `kmt build`'s
@@ -602,18 +592,8 @@ def r2() -> None:
         r2_filter_summary = apply_and_log(
             conn, window="r2", dollar_volume_by_ticker=None
         )
-        r1_scope = {
-            r[0] for r in conn.execute(
-                "SELECT ticker FROM markets m WHERE m.in_r1_window = 1 "
-                "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r1')"
-            ).fetchall()
-        }
-        r2_scope = {
-            r[0] for r in conn.execute(
-                "SELECT ticker FROM markets m WHERE m.in_r2_window = 1 "
-                "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r2')"
-            ).fetchall()
-        }
+        r1_scope = db.in_scope_tickers(conn, "r1")
+        r2_scope = db.in_scope_tickers(conn, "r2")
         # ONE construction on both sides of every boundary -- binding per
         # CLAUDE.md S3's R2 corollary. delta measures the CHANGE in psi at
         # the fee/publication boundaries within our own data, so a panel
@@ -796,12 +776,7 @@ def _compute_escalation(config: dict) -> dict:
     try:
         # Contract reading -- same pinned primary as R1/`kmt r2`.
         apply_and_log(conn, window="r2", dollar_volume_by_ticker=None)
-        r2_scope = {
-            r[0] for r in conn.execute(
-                "SELECT ticker FROM markets m WHERE m.in_r2_window = 1 "
-                "AND m.ticker NOT IN (SELECT ticker FROM universe_log WHERE window = 'r2')"
-            ).fetchall()
-        }
+        r2_scope = db.in_scope_tickers(conn, "r2")
         # series_ticker, not category: data/fees.yaml scopes the maker fee to
         # an enumerated list of SERIES, and category never determined a Kalshi
         # fee at all.

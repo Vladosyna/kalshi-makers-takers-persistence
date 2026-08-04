@@ -239,3 +239,43 @@ def test_connect_read_only_does_not_create_a_missing_database(tmp_path):
     with pytest.raises(sqlite3.OperationalError):
         connect_read_only(missing)
     assert not missing.exists()
+
+
+def test_in_scope_tickers_refuses_an_unbuilt_universe_log(tmp_path):
+    """An EMPTY exclusion list excludes nothing, so the in-scope idiom silently
+    returns every market in the window. Measured 2026-08-04: with universe_log
+    empty for r2 it returned 14,907,046 markets against a real in-scope set of
+    126,087, and a panel build over that reached 10GB before being killed."""
+    import pytest
+
+    from kalshi_mt.store.db import UniverseLogNotBuiltError, connect, in_scope_tickers, upsert_market
+
+    conn = connect(tmp_path / "t.db")
+    upsert_market(conn, {"ticker": "A-1", "in_r2_window": 1})
+    conn.commit()
+    with pytest.raises(UniverseLogNotBuiltError, match="kmt build"):
+        in_scope_tickers(conn, "r2")
+
+
+def test_in_scope_tickers_accepts_a_window_where_nothing_was_excluded(tmp_path):
+    """"No exclusions" is a legitimate state -- every market passed -- and is
+    NOT the same as "build never ran". An earlier version of this guard keyed
+    on the row count and would have refused a perfectly clean universe."""
+    from kalshi_mt.store.db import connect, in_scope_tickers, replace_universe_exclusions, upsert_market
+
+    conn = connect(tmp_path / "t.db")
+    upsert_market(conn, {"ticker": "CLEAN-1", "in_r2_window": 1})
+    replace_universe_exclusions(conn, "r2", [])  # build ran; nothing to exclude
+    conn.commit()
+    assert in_scope_tickers(conn, "r2") == {"CLEAN-1"}
+
+
+def test_in_scope_tickers_excludes_logged_markets_once_built(tmp_path):
+    from kalshi_mt.store.db import connect, in_scope_tickers, replace_universe_exclusions, upsert_market
+
+    conn = connect(tmp_path / "t.db")
+    for ticker in ("KEEP-1", "DROP-1"):
+        upsert_market(conn, {"ticker": ticker, "in_r2_window": 1})
+    replace_universe_exclusions(conn, "r2", [("DROP-1", "volume_below_1000")])
+    conn.commit()
+    assert in_scope_tickers(conn, "r2") == {"KEEP-1"}
