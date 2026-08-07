@@ -242,7 +242,29 @@ Useful properties for anything supervising a run:
 - **but a supervisor on a Modern Standby host sleeps too**, so before calling
   a stale log a hang it must check whether *it* was suspended (compare its own
   tick duration against the interval). Otherwise every host sleep is reported
-  as a collector hang and kills a healthy process.
+  as a collector hang and kills a healthy process;
+- and read staleness from the log's **last line**, not its `LastWriteTime`.
+  Windows updates the directory entry of a file held open for writing lazily,
+  so the timestamp can sit frozen for hours while the file grows — 19
+  consecutive false "possible hang" alerts came from trusting it, against a
+  collector running at full rate.
+
+**Nothing restarts a fetch after the machine reboots, and that is the largest
+remaining operational gap.** `keep_system_awake` defers *idle* sleep and held
+for six days unbroken; it cannot override a sleep the user or a policy
+initiates, and it cannot survive a restart at all. Observed 2026-08-06/07: the
+host entered connected standby at 20:35 (Kernel-Power 506), the frozen
+collector wrote its last line at 20:53, Windows initiated a shutdown
+transition at 02:30 (Kernel-Power 109) and rebooted at 02:33 — after which the
+collector simply did not exist. Fourteen hours passed before anyone noticed.
+Nothing was lost, because every phase is checkpointed, but nothing was
+collected either.
+
+Two operator-side mitigations, both deliberately left to the operator because
+they change system state rather than this program's behaviour: disable standby
+for the duration (`powercfg /change standby-timeout-ac 0`), and check that
+Windows Update is not configured to restart unattended overnight. A
+start-at-logon scheduled task would close the gap properly.
 
 ## Analysis discipline
 
