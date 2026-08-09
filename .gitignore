@@ -19,6 +19,12 @@ data/logs/*
 !data/fees.yaml
 !data/frozen_2024_mix.json
 !data/category_map_polymarket_kalshi.yaml
+# Operational config for tools/autostart_fetch.ps1 -- which command the restart
+# task runs, and its kill switch. Committed because it is the task's real
+# definition; the state file it writes beside it
+# (data/autostart_fetch.state.json, holding the last launch time for the
+# crash-loop brake) is runtime state and stays ignored.
+!data/autostart_fetch.json
 reports/*
 !reports/.gitkeep
 !reports/step_zero/

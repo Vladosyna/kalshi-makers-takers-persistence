@@ -249,22 +249,82 @@ Useful properties for anything supervising a run:
   consecutive false "possible hang" alerts came from trusting it, against a
   collector running at full rate.
 
-**Nothing restarts a fetch after the machine reboots, and that is the largest
-remaining operational gap.** `keep_system_awake` defers *idle* sleep and held
-for six days unbroken; it cannot override a sleep the user or a policy
-initiates, and it cannot survive a restart at all. Observed 2026-08-06/07: the
-host entered connected standby at 20:35 (Kernel-Power 506), the frozen
-collector wrote its last line at 20:53, Windows initiated a shutdown
-transition at 02:30 (Kernel-Power 109) and rebooted at 02:33 — after which the
-collector simply did not exist. Fourteen hours passed before anyone noticed.
-Nothing was lost, because every phase is checkpointed, but nothing was
-collected either.
+**A fetch does not survive a reboot on its own.** `keep_system_awake` defers
+*idle* sleep and held for six days unbroken; it cannot override a sleep the
+user or a policy initiates, and it cannot survive a restart at all. Twice
+observed, and the two have different causes worth telling apart:
 
-Two operator-side mitigations, both deliberately left to the operator because
-they change system state rather than this program's behaviour: disable standby
-for the duration (`powercfg /change standby-timeout-ac 0`), and check that
-Windows Update is not configured to restart unattended overnight. A
-start-at-logon scheduled task would close the gap properly.
+- **2026-08-06/07, sleep then reboot.** The host entered connected standby at
+  20:35 (Kernel-Power 506), the frozen collector wrote its last line at 20:53,
+  Windows initiated a shutdown transition at 02:30 (Kernel-Power 109) and
+  rebooted at 02:33 — after which the collector simply did not exist.
+  **Fourteen hours** passed before anyone noticed.
+- **2026-08-09, hardware crash.** Bugcheck `0x124`
+  (`WHEA_UNCORRECTABLE_ERROR`) at 16:47 under sustained load, with
+  `SleepInProgress=0` — not a standby event at all. Dump creation failed
+  (`volmgr` 161), so there is no minidump; Windows ran its own memory
+  diagnostic on the next boot and found no errors. Two earlier minidumps sit in
+  `C:\Windows\Minidump` (2026-07-05, 2026-07-28), making this the third crash
+  in five weeks on a machine that has eight more days of continuous fetching
+  ahead of it. **Thirty-five minutes** lost, only because someone was watching.
+
+Neither cost any data — every phase is checkpointed, and the SQLite store is
+WAL with `synchronous=FULL`, so an abrupt power loss can drop the last
+uncommitted transaction but cannot corrupt the file. That was verified after
+the 2026-08-09 crash rather than assumed: `quick_check`, `foreign_key_check`
+and a full `integrity_check` all returned `ok` on the 6.5 GB database.
+
+#### Automatic restart: `KalshiMT-AutostartFetch`
+
+[`tools/autostart_fetch.ps1`](tools/autostart_fetch.ps1) closes the gap, driven
+by [`data/autostart_fetch.json`](data/autostart_fetch.json) and registered as a
+scheduled task with two triggers: **at logon** (the reboot path) and **every 15
+minutes** (a collector that dies without a reboot — 2026-07-28's shell teardown
+was exactly that). A logon trigger alone cannot provide the second: its
+repetition cycle starts at the *next* logon, so a task registered mid-session
+shows an empty `NextRunTime` and never repeats.
+
+It only ever *starts* a collector — it never stops, kills or supervises one.
+That restraint is deliberate: the one previous supervisor killed a healthy
+fifteen-hour run on stale state, and a zombie copy of it later restarted the
+collector unnoticed and collided with the live process on SQLite "database is
+locked". Four safeguards:
+
+| Safeguard | Answers |
+|---|---|
+| Single-instance guard (exits if any `kmt` is alive) | a manual launch and a scheduled firing both holding the database |
+| Relaunch brake (default 10 min between starts) | a collector dying instantly on a bad argument becoming a hot loop against Kalshi's API |
+| `"enabled": false` kill switch | stopping it without touching the task registration |
+| Audit line on **every** firing, including no-ops, in `data/logs/autostart.log` | a restart happening behind the operator's back, which is what made the zombie watchdog expensive to diagnose |
+
+The command lives in the JSON, not the task, because the phase being collected
+changes over the project's life. **The config is not self-updating**: when a
+phase finishes, point `args` at the next one or set `"enabled": false`. A stale
+config relaunches a phase with no work left — harmless, since it exits after a
+database query without touching the API, but pointless.
+
+```powershell
+# what it would do right now, changing nothing
+powershell -ExecutionPolicy Bypass -File tools\autostart_fetch.ps1 -WhatIfOnly
+Get-ScheduledTaskInfo -TaskName KalshiMT-AutostartFetch   # LastTaskResult 0 = healthy
+```
+
+**Its one limitation is the overnight case.** Registering without elevation
+forces `LogonType Interactive`, so an unattended 02:33 reboot with nobody
+logging in is still not covered until morning — precisely the 2026-08-06/07
+scenario. Closing that needs an **elevated** shell to re-register with an
+at-startup trigger, which runs whether anyone is logged on or not:
+
+```powershell
+$t = @((New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"))
+$p = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
+Set-ScheduledTask -TaskName KalshiMT-AutostartFetch -Trigger $t -Principal $p
+```
+
+Two mitigations remain operator-side because they change system state rather
+than this program's behaviour: disable standby for the duration
+(`powercfg /change standby-timeout-ac 0`), and check that Windows Update is not
+configured to restart unattended overnight.
 
 ## Analysis discipline
 
