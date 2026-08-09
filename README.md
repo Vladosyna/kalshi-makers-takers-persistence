@@ -274,15 +274,18 @@ uncommitted transaction but cannot corrupt the file. That was verified after
 the 2026-08-09 crash rather than assumed: `quick_check`, `foreign_key_check`
 and a full `integrity_check` all returned `ok` on the 6.5 GB database.
 
-#### Automatic restart: `KalshiMT-AutostartFetch`
+#### Restarting a dead collector: `tools/autostart_fetch.ps1`
 
-[`tools/autostart_fetch.ps1`](tools/autostart_fetch.ps1) closes the gap, driven
-by [`data/autostart_fetch.json`](data/autostart_fetch.json) and registered as a
-scheduled task with two triggers: **at logon** (the reboot path) and **every 15
-minutes** (a collector that dies without a reboot — 2026-07-28's shell teardown
-was exactly that). A logon trigger alone cannot provide the second: its
-repetition cycle starts at the *next* logon, so a task registered mid-session
-shows an empty `NextRunTime` and never repeats.
+[`tools/autostart_fetch.ps1`](tools/autostart_fetch.ps1) is the guarded
+restart, driven by
+[`data/autostart_fetch.json`](data/autostart_fetch.json). It is **deliberately
+not registered as a scheduled task** — see "Why it is not scheduled" below — so
+it is a one-command manual restart:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\autostart_fetch.ps1             # restart if dead
+powershell -ExecutionPolicy Bypass -File tools\autostart_fetch.ps1 -WhatIfOnly # say what it would do, change nothing
+```
 
 It only ever *starts* a collector — it never stops, kills or supervises one.
 That restraint is deliberate: the one previous supervisor killed a healthy
@@ -303,25 +306,51 @@ phase finishes, point `args` at the next one or set `"enabled": false`. A stale
 config relaunches a phase with no work left — harmless, since it exits after a
 database query without touching the API, but pointless.
 
-```powershell
-# what it would do right now, changing nothing
-powershell -ExecutionPolicy Bypass -File tools\autostart_fetch.ps1 -WhatIfOnly
-Get-ScheduledTaskInfo -TaskName KalshiMT-AutostartFetch   # LastTaskResult 0 = healthy
-```
+#### Why it is not scheduled
 
-**Its one limitation is the overnight case.** Registering without elevation
-forces `LogonType Interactive`, so an unattended 02:33 reboot with nobody
-logging in is still not covered until morning — precisely the 2026-08-06/07
-scenario. Closing that needs an **elevated** shell to re-register with an
-at-startup trigger, which runs whether anyone is logged on or not:
+It *was*, briefly, on 2026-08-09, as `KalshiMT-AutostartFetch` with an at-logon
+trigger and a 15-minute standing heartbeat. It worked — the guard fired
+correctly, the audit trail recorded every firing, and the collector was never
+touched — and it was **unregistered within the hour because it flashed a
+console window on the desktop every fifteen minutes**. On an interactive
+desktop that is not a cosmetic detail; it makes the machine unusable, and a
+supervisor nobody can stand to leave running is not a supervisor.
 
-```powershell
-$t = @((New-ScheduledTaskTrigger -AtStartup), (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"))
-$p = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
-Set-ScheduledTask -TaskName KalshiMT-AutostartFetch -Trigger $t -Principal $p
-```
+The cause is that an unelevated registration forces `LogonType Interactive`,
+which runs the action in the user's own session, and `powershell.exe` there
+gets a console — `-WindowStyle Hidden` suppresses the window's *contents*, not
+the brief `conhost` allocation. Two ways to fix it properly, neither applied
+because both are the operator's call:
 
-Two mitigations remain operator-side because they change system state rather
+1. **Elevated, no window ever.** An `S4U` principal runs the action in session
+   0, where there is no desktop to flash on, and additionally allows an
+   at-startup trigger — which also closes the one case the interactive version
+   never covered, the unattended 02:33 reboot with nobody logging in
+   (2026-08-06/07 exactly). Needs an **administrator** shell; attempted
+   unelevated on 2026-08-09 and refused with `Access is denied`.
+
+   ```powershell
+   $a = New-ScheduledTaskAction -Execute 'powershell.exe' -WorkingDirectory 'D:\Papers\Kalshi replication lab' `
+        -Argument '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "D:\Papers\Kalshi replication lab\tools\autostart_fetch.ps1"'
+   $t = @((New-ScheduledTaskTrigger -AtStartup),
+          (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"))
+   $t[0].Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15)).Repetition
+   $p = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
+   Register-ScheduledTask -TaskName KalshiMT-AutostartFetch -Action $a -Trigger $t -Principal $p -Force
+   ```
+
+2. **Unelevated, hidden via a `wscript` shim.** `wscript.exe` running a
+   one-line `.vbs` that calls `WshShell.Run(cmd, 0, False)` starts the
+   PowerShell with no console at all, so an interactive-logon task stays
+   silent. Cheaper to set up, but still cannot provide an at-startup trigger.
+
+Note the trap either version must avoid: a logon trigger's *repetition cycle
+starts at the next logon*, so a task registered mid-session shows an empty
+`NextRunTime` and never repeats. It would cover the reboot case and silently
+not the crash case. The heartbeat has to ride on its own standing trigger,
+which is why the snippet above sets `$t[0].Repetition` explicitly.
+
+Two further mitigations remain operator-side because they change system state rather
 than this program's behaviour: disable standby for the duration
 (`powercfg /change standby-timeout-ac 0`), and check that Windows Update is not
 configured to restart unattended overnight.

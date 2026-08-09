@@ -1,7 +1,16 @@
 <#
 .SYNOPSIS
-    Bring the collector back after a reboot or a crash. Runs from the scheduled
-    task KalshiMT-AutostartFetch; safe to run by hand at any time.
+    Bring the collector back after a reboot or a crash. Run by hand; safe to
+    run at any time, including while a collector is already up.
+
+.NOTES
+    NOT currently wired to a scheduled task. It was, on 2026-08-09, as
+    KalshiMT-AutostartFetch -- and that registration was removed within the
+    hour because an unelevated task runs in the user's own session, where
+    powershell.exe gets a console and flashed a window on the desktop every
+    fifteen minutes. README's "Why it is not scheduled" carries the two ways to
+    schedule it silently (an elevated S4U principal, or a wscript shim) and the
+    reason neither was applied unilaterally.
 
 .DESCRIPTION
     README's "Running the long fetches" section called an unsupervised restart
