@@ -161,18 +161,50 @@ class TradeStore:
 
     def _maybe_compact(self, month: str) -> None:
         """Merge a month's part files once there are enough to be worth it.
-        O(partition) but amortised over COMPACT_AT_PARTS appends, versus the
-        old code paying it on every single one."""
+
+        Runs through DuckDB, which SPILLS TO DISK, rather than materialising
+        the month in RAM. The amortisation argument in the append() docstring
+        is about TIME -- paying O(partition) once per COMPACT_AT_PARTS appends
+        instead of on every one -- and it quietly assumed the partition would
+        fit in memory. It stopped fitting on 2026-08-24: Pass 2 was killed by
+        `memory allocation of 635487952 bytes failed` at the exact moment
+        month=2026-06 reached its 64th part file, 1.5GB of ZSTD-compressed
+        tape holding 39.7M fills. Decompressed into Polars, concatenated, then
+        deduplicated, that wants tens of gigabytes on a 27.7GB host, and the
+        Windows commit limit refused it.
+
+        Streaming Polars (scan_parquet -> unique -> sink_parquet) was tried on
+        the same partition and died the same way, because the dedup is not
+        streamable and falls back to an in-memory hash. DuckDB's GROUP BY is a
+        spillable hash aggregate, and _duckdb_connect already pins a memory
+        limit and a spill directory on the data volume: measured on that exact
+        partition, 31.8s at a 4GB cap, output verified row-for-row against
+        COUNT(DISTINCT trade_id).
+
+        Dedup keeps one arbitrary row per trade_id rather than Polars'
+        "first". The two agree here: a duplicate only exists because a page
+        was re-fetched on resume, so the rows are byte-identical -- and every
+        reader dedups on trade_id anyway, which is what actually guarantees
+        correctness."""
         parts = self._part_files(month)
         if len(parts) < COMPACT_AT_PARTS:
             return
-        merged = pl.concat(
-            [pl.read_parquet(f, memory_map=False) for f in parts], how="diagonal"
-        ).unique(subset=["trade_id"], keep="first")
         d = self.base / f"month={month}"
         name = f"part-{uuid.uuid4().hex}.parquet"
         tmp = d / (name + ".tmp")
-        merged.write_parquet(tmp)
+        cols = ", ".join(
+            f'any_value("{c}") AS "{c}"' for c in TRADE_SCHEMA if c != "trade_id"
+        )
+        con = _duckdb_connect()
+        try:
+            con.execute(
+                f"COPY (SELECT trade_id, {cols} "
+                f"FROM read_parquet($paths, union_by_name=true) GROUP BY trade_id) "
+                f"TO '{tmp.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD)",
+                {"paths": [str(p) for p in parts]},
+            )
+        finally:
+            con.close()
         os.replace(tmp, d / name)
         for f in parts:
             try:
