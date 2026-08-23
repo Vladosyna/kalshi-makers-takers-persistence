@@ -68,8 +68,8 @@ BACKOFF_S = 15.0
 # agent string the archive will serve.
 HEADERS = {
     "User-Agent": (
-        "kalshi-makers-takers-replication/0.1 (academic replication; "
-        "archiving Kalshi fee-schedule versions; +https://github.com/Vladosyna/kalshi-makers-takers-replication)"
+        "kalshi-makers-takers-persistence/0.1 (academic replication; "
+        "archiving Kalshi fee-schedule versions; +https://github.com/Vladosyna/kalshi-makers-takers-persistence)"
     ),
     "Accept": "application/pdf,*/*",
 }

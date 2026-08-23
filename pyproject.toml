@@ -1,5 +1,5 @@
 [project]
-name = "kalshi-makers-takers-replication"
+name = "kalshi-makers-takers-persistence"
 version = "0.1.0"
 description = "Replication and extension of Burgi, Deng & Whelan's 'Makers and Takers: The Economics of the Kalshi Prediction Market' -- read-only research instrument, no execution code."
 readme = "README.md"

@@ -1,40 +1,78 @@
-# Kalshi Makers & Takers Replication
+# Kalshi Makers & Takers: Replication and Persistence
 
-A read-only research instrument that answers one question with statistical rigor:
+A read-only research instrument built around one question:
 
 > Did Kalshi's favorite–longshot bias and maker/taker return asymmetry — as
-> documented by Bürgi, Deng & Whelan (2025) through April 2025 — persist once
-> Kalshi started charging maker fees and the paper itself went public?
+> documented by Bürgi, Deng & Whelan through April 2025 — persist once Kalshi
+> started charging maker fees and the paper itself went public?
 
-This is a replication (2021 → 2025-04-30) plus an extension (2025-05-01 →
-present) of Bürgi, Deng & Whelan, *Makers and Takers: The Economics of the
-Kalshi Prediction Market* (CEPR DP 20631 / CESifo WP 12122 / MPRA 126350).
+Two halves, and the second is the contribution. **R1** reproduces Bürgi, Deng
+& Whelan, *Makers and Takers: The Economics of the Kalshi Prediction Market*
+(2026; CEPR DP 20631 / CESifo WP 12122 / MPRA 126350) over their own window,
+2021 → 2025-04-30. **R2** then asks their own closing question — they write
+that "it will be interesting to see if the biases and return patterns that we
+have reported persist now that they have been publicly documented" — across
+two dated treatments they could not observe: the maker fee (2025-05) and the
+paper's first public posting (2025-09-08).
+
+Three things make this more than a re-run of someone else's regression:
+
+- **The fee treatment is not what the paper says it is.** Sixteen dated
+  captures of Kalshi's own published fee schedule show the maker fee was
+  never an exchange-wide regime change but a **per-series surcharge**, revised
+  five times, covering 8.0% → 14.4% of in-scope markets (61% → 66% of
+  *volume*). That turns R2's headline from an exchange-wide before/after
+  break into a **series-level difference-in-differences with treated and
+  control markets trading in the same months** — better identification, and
+  it absorbs the sports-composition shift as a side effect. The same sources
+  turn up two carve-outs BDW do not model: a 0.14 taker rate before
+  2021-08-01, and a half rate for index markets covering 18.3% of R1.
+- **The composition confound is the design, not a footnote.** Sports launched
+  on Kalshi almost exactly at the R1/R2 boundary, volumes jumped, and BDW's
+  own tables show the bias is category-heterogeneous — so a naive "did the
+  aggregate bias move" comparison measures composition, not persistence.
+  Hence frozen calendar-2024 mix weighting, a within/between decomposition,
+  and verdicts bound to formal interaction tests.
+- **Divergences are reported, not smoothed.** BDW's 63-contract mismatch
+  filter does not reproduce from any public field; what is implemented
+  instead is a settlement-consistency check, the retained contracts are
+  logged as a divergence, and the discarded comparison became a validation —
+  95.7% of tape-derived closing prices match Kalshi's independently reported
+  final price to the cent.
+
 **No execution code, no order placement, no Kalshi account required** — every
 endpoint this repo touches is Kalshi's public, unauthenticated market data
 API (verified live by Step Zero below). See [`Claude.md`](Claude.md) for the
-full engineering brief (v1.1 — single source of truth for scope, methodology,
-and phasing); [`kalshi-replication-spec.md`](kalshi-replication-spec.md) is a
-superseded v1.0 draft, kept for history only.
+full engineering brief (v1.1 plus dated amendments — single source of truth
+for scope, methodology, and phasing) and
+[`docs/analysis_plan.md`](docs/analysis_plan.md) for the R2 equations and
+verdict thresholds, committed before any R2 estimate was computed;
+[`kalshi-replication-spec.md`](kalshi-replication-spec.md) is a superseded
+v1.0 draft, kept for history only.
 
 This is a separate, standalone repository — not part of, and not dependent
 on, `polymarket-forecast-lab`.
 
 ## Why this exists
 
-BDW's own sample cutoff is not arbitrary: they stop in April 2025 because
-"Kalshi began to charge fees on Makers after April 2025," a change that
-directly taxes the paper's headline exploitable margin (maker returns of
-+2.6% on contracts ≥50c). They also explicitly invite the follow-up
-question — "we think it will be interesting to see if the biases and return
-patterns that we have reported persist now that they have been publicly
-documented" — and the maker-fee change and the paper's first public posting
-(CEPR, 2025-09-08) are close enough in time to attempt a coarse decomposition
-between the two. The one confound that makes this hard: sports launched on
-Kalshi almost exactly at the R1/R2 boundary, volumes jumped, and BDW's own
-data shows the bias is category-heterogeneous — so any naive "did the
-aggregate bias move" comparison is confounded with composition shift, not a
-measure of persistence. Most of this repo's R2 design exists to take that
-confound apart before applying any persistence verdict to what's left.
+**BDW's sample cutoff is a fee-regime boundary, not an arbitrary date.** They
+stop in April 2025 because, in their words, Kalshi "began to charge fees on
+Makers after April 2025" — a change that directly taxes the paper's headline
+exploitable margin, maker returns of **+2.6% on contracts ≥50c**. Everything
+after their window therefore lives under a treatment aimed squarely at the
+thing they measured, and nobody has looked.
+
+**The two treatments are separable in time.** The maker fee (2025-05) and the
+paper's first public posting (CEPR, 2025-09-08) sit roughly four months apart,
+which is what makes a coarse decomposition possible at all: a bias that decays
+at the fee date is priced-in cost, one that decays at the publication date is
+the anomaly being arbitraged away. That is the McLean–Pontiff
+post-publication-decay question, asked on a prediction market rather than a
+stock cross-section, on an anomaly its own authors invited someone to re-test.
+
+**And it is answerable on purely historical data**, from a public API, with no
+account and no execution — which is why the whole thing is a read-only
+instrument that can be re-run end to end by anyone who clones it.
 
 ## How it works
 
@@ -140,20 +178,39 @@ full R1+R2 window — every stage of that pipeline is already implemented and
 tested end-to-end against live samples, independent of how much of the
 universe has been pulled so far.
 
-Collection state (2026-07-28): R1's window is collected and reproduces every
-headline BDW quantity — see [`docs/r1_reproduction_findings.md`](docs/r1_reproduction_findings.md).
-Pass 2's trade tape is complete for both windows. What R2 is still waiting on
-is closing quotes for the months that *bracket* its two boundaries
-(2025-05 … 2025-12, ~104k eligible markets); `--panel-quote-close-from/-to`
-exists to prioritise exactly those, because without them no delta is
-identified no matter how much of 2026 is collected.
+**Collection state (2026-08-23).**
+
+- **R1 is done.** Its window is collected and reproduces every headline BDW
+  quantity — see [`docs/r1_reproduction_findings.md`](docs/r1_reproduction_findings.md).
+- **R2's boundary months are done, and the DiD identifies on real data**:
+  417,198 observations across 34,564 event clusters, 90 treated series, both
+  treated and control arms present in every collected month, no wild bootstrap
+  needed. The estimate itself is deliberately not read until collection closes
+  and the plan's lock artifact is written.
+- **In progress: closing quotes for the tail months 2026-05 and 2026-06** —
+  2026-05 at 96.3%, 2026-06 at 95.6%, roughly 22k markets left, about fourteen
+  hours at the observed rate. `--panel-quote-close-from/-to` exists to
+  prioritise exactly the months an estimate needs, because a delta is
+  identified by the months *bracketing* its boundary and by nothing else.
+- **Then**: Pass 2 tapes for whatever the spread filter passes in those
+  months, `kmt build`, and `kmt r2`.
+
+One measured caveat worth stating in public, because it changes what the tail
+months are worth: the spread filter's pass rate is far lower than an early
+extrapolation predicted — about 55% for 2026-05 and 20% for 2026-06 against a
+forecast of 69.5% and 51.3%. The forecast was recorded before the evidence
+existed and is compared against on every run of
+[`tools/measure_tail_yield.py`](tools/measure_tail_yield.py); it failed, the
+reason is that the quote phase walks markets in ticker order and ticker order
+turned out to be correlated with spread, and the tool says so rather than
+quietly restating the number.
 
 ## Quickstart
 
 Requirements: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/Vladosyna/kalshi-makers-takers-replication && cd kalshi-makers-takers-replication
+git clone https://github.com/Vladosyna/kalshi-makers-takers-persistence && cd kalshi-makers-takers-persistence
 uv sync
 uv run pytest                # 385 tests, no network required
 uv run kmt --help
@@ -223,6 +280,29 @@ Start-Process -FilePath .\.venv\Scripts\kmt.exe `
 Nothing is lost when a run does die: every phase is resumable from its own
 checkpoint, and the panel/quote phase's resume predicate is `ticker NOT IN
 quotes` — the row `fetch_closing_quote` writes last, after the panel rows.
+
+**`Start-Process` detaches from the shell, not from the job object, and on
+some hosts that is the difference that matters.** Where the shell runs inside
+a service that keeps its descendants in a Windows *job object*, every
+collector launched from it dies when that service restarts — orphaned rather
+than parented, so tracing the parent chain shows nothing to blame. Observed
+here on 2026-08-18 16:20:29 and again on 2026-08-19 10:26:03, both times with
+the machine awake, no traceback, no exit summary, and the log stopping
+mid-request within seconds of the service's own "stopped" line. The
+diagnostic that identifies it: the collector's last log timestamp matches a
+service-restart entry in the Windows Application log to the second, while the
+System log shows no sleep, no reboot, and no bugcheck.
+
+Creating the process from *outside* the job is the fix, and there are two
+routes. Task Scheduler works — the Task Scheduler service creates the
+process, so it never joins the caller's job — and is the mechanism the
+scheduled-task section below is about. The cheaper-looking route, WMI
+(`Win32_Process.Create` via `WmiPrvSE`), **was tried and does not work**:
+[`tools/launch_detached.cmd`](tools/launch_detached.cmd) keeps the attempt and
+its failure. The process is created successfully (`ReturnValue=0`) and then
+dies within seconds, leaving a literal `^C` as the last byte of its log — the
+WMI-created `cmd.exe` is given a console that immediately closes and delivers
+a Ctrl+C. Do not spend the afternoon on it twice.
 
 **Do not treat `eligible == quoted` as "no work left".** This README said so
 until 2026-08-01, on the reasoning that the quote row is written *always*, even
