@@ -430,6 +430,40 @@ starts at the next logon*, so a task registered mid-session shows an empty
 not the crash case. The heartbeat has to ride on its own standing trigger,
 which is why the snippet above sets `$t[0].Repetition` explicitly.
 
+#### Advancing to the next phase: `tools/watch_and_advance.ps1`
+
+A collection phase that finishes at 3am should not wait until morning for the
+next one to start. [`tools/watch_and_advance.ps1`](tools/watch_and_advance.ps1)
+polls for a **clean** finish of the Pass 1 quote fetch, repoints
+`data/autostart_fetch.json` at Pass 2, and starts it.
+
+It detects completion by the collector's own clean return — a stats JSON on
+stdout — and **not** by `quoted == eligible`, which can stay false forever
+because some markets 404 permanently (see above). Three branches, and the
+third is why it is worth leaving running overnight:
+
+| Observed | Action |
+|---|---|
+| `kmt` alive | keep waiting |
+| gone, `.out.log` non-empty | clean finish → repoint config, start Pass 2 |
+| gone, `.out.log` empty | it died → relaunch Pass 1 |
+
+Like the restart script, it only ever *starts* processes — every launch goes
+through `autostart_fetch.ps1` and inherits its guard, brake and audit trail —
+and it stops at Pass 2 on purpose. `kmt build` / `kmt r1` / `kmt r2` are
+analysis, they write the locked R2 artifact, and per
+[`docs/analysis_plan.md`](docs/analysis_plan.md) that lock is a deliberate act
+rather than something a timer performs unattended.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\watch_and_advance.ps1 -DryRun  # decide nothing, report what it would do
+powershell -ExecutionPolicy Bypass -File tools\watch_and_advance.ps1          # for real; progress in data/logs/watch_advance.log
+```
+
+It shares the fragility it exists to cover: running inside the session's job
+object, a Claude VM Service restart kills the watcher too. Collection is
+unaffected if that happens — just start it again.
+
 Two further mitigations remain operator-side because they change system state rather
 than this program's behaviour: disable standby for the duration
 (`powercfg /change standby-timeout-ac 0`), and check that Windows Update is not
