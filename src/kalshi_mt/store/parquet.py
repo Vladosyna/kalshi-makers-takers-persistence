@@ -27,6 +27,24 @@ log = logging.getLogger(__name__)
 
 COMPACT_AT_PARTS = 64
 
+# Only parts SMALLER than this take part in a compaction. Anything at or above
+# it is treated as an already-compacted run and left where it is.
+#
+# Without this, compaction rewrote the entire month every time it fired, and
+# because it runs inside append() -- which is called from the async fetch loop
+# and contains no await -- the whole event loop stopped for the duration. On
+# 2026-08-24, with month=2026-06 at 1.5GB, that was measured at 90-100% of
+# EVERY HOUR spent stalled: 93 pauses in five hours, the longest 896 seconds,
+# with all 20 concurrent fetches frozen behind a single DuckDB query. Pass 2's
+# throughput fell from ~1,030 markets/hour to ~340 and was still dropping.
+#
+# Merging only the small recent appends bounds the work at roughly
+# COMPACT_AT_PARTS x this size regardless of how large the month has grown, so
+# the pause stays sub-second. The large runs it skips are left for readers to
+# glob, which costs nothing: every reader already dedups on trade_id, and
+# iter_fills scans a month at a time either way.
+COMPACT_MAX_PART_BYTES = 64 * 1024 * 1024
+
 # Deliberately well under the machine's RAM: this runs alongside a collector,
 # and DuckDB's default (80% of TOTAL RAM) is a budget the machine does not
 # actually have free. See _duckdb_connect.
@@ -224,7 +242,10 @@ class TradeStore:
         was re-fetched on resume, so the rows are byte-identical -- and every
         reader dedups on trade_id anyway, which is what actually guarantees
         correctness."""
-        parts = self._part_files(month)
+        parts = [
+            p for p in self._part_files(month)
+            if p.stat().st_size < COMPACT_MAX_PART_BYTES
+        ]
         if len(parts) < COMPACT_AT_PARTS:
             return
         d = self.base / f"month={month}"
