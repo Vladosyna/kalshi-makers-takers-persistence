@@ -452,6 +452,9 @@ def r1() -> None:
     BDW Tables 8-9, win-rate curve vs Fig 3, returns-by-band vs Fig 5,
     maker/taker split vs Fig 6/Table 10, divergence log."""
     from kalshi_mt.fees.schedule import bdw_fee_model, load_fee_schedule
+    from kalshi_mt.r1.field_population import (
+        REQUIRED_COLUMNS as FIELD_POPULATION_COLUMNS,
+    )
     from kalshi_mt.r1.field_population import field_population_by_era
     from kalshi_mt.r1.panel import build_doubled_panel, build_yes_only_panel_backfilled
     from kalshi_mt.r1.regression import verify_two_way_equals_one_way_clustering
@@ -497,8 +500,11 @@ def r1() -> None:
         # -- only parses if the returns are panel-based. The tape is still read
         # for field_population_by_era, which is genuinely a per-fill diagnostic.
         mt_split = maker_taker_split(doubled, fee_schedule)
-        trades = trade_store.read_all()
-        field_population = field_population_by_era(trades)
+        # Streamed, not read_all(): the tape is several GB compressed and
+        # materialising it is the failure that killed Pass 2 on 2026-08-24.
+        field_population = field_population_by_era(
+            trade_store.iter_fills(columns=FIELD_POPULATION_COLUMNS)
+        )
 
         log_path = write_divergence_log(
             {
@@ -755,6 +761,9 @@ def _compute_escalation(config: dict) -> dict:
     from kalshi_mt.fees.ribbon import compute_ribbon, default_fee_grid
     from kalshi_mt.fees.schedule import load_fee_schedule
     from kalshi_mt.r1.filters import apply_and_log
+    from kalshi_mt.r2.maker_margin import (
+        REQUIRED_COLUMNS as MAKER_MARGIN_COLUMNS,
+    )
     from kalshi_mt.r2.maker_margin import compute_maker_margin_ge_50c
     from kalshi_mt.r2.report import load_r2_report
     from kalshi_mt.r2.verdicts import DeltaBarEstimate
@@ -792,15 +801,27 @@ def _compute_escalation(config: dict) -> dict:
     finally:
         conn.close()
 
-    trades = trade_store.read_all()
-    maker_margin = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, fee_schedule, r2_scope)
+    # A FRESH stream per call, deliberately, rather than one iterator reused.
+    # The ribbon below re-runs this across an 11-point fee grid, and an
+    # exhausted generator would hand every sweep after the first an empty tape
+    # and a silently wrong ribbon. The cost is one scan per grid point, which
+    # is I/O on an otherwise idle machine; the alternative -- materialising the
+    # tape once -- is exactly what killed Pass 2 on 2026-08-24.
+    def _fills():
+        return trade_store.iter_fills(tickers=r2_scope, columns=MAKER_MARGIN_COLUMNS)
+
+    maker_margin = compute_maker_margin_ge_50c(
+        _fills(), resolutions, series_by_ticker, fee_schedule, r2_scope
+    )
 
     ribbon = None
     sourced_rate = _sourced_maker_rate(fee_schedule)
     if sourced_rate is not None and maker_margin.n_maker_b > 0 and maker_margin.n_taker_b > 0:
         def _margin_fn(rate: float) -> float:
             synthetic = _maker_rate_schedule(fee_schedule, rate)
-            swept = compute_maker_margin_ge_50c(trades, resolutions, series_by_ticker, synthetic, r2_scope)
+            swept = compute_maker_margin_ge_50c(
+                _fills(), resolutions, series_by_ticker, synthetic, r2_scope
+            )
             return swept.layer_b if swept.layer_b is not None else 0.0
 
         ribbon = compute_ribbon(_margin_fn, default_fee_grid(sourced_rate))

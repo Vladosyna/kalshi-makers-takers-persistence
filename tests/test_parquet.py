@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import polars as pl
 import pytest
 
 from kalshi_mt.store.parquet import TradeStore, month_str
@@ -279,3 +280,42 @@ def test_last_trade_at_or_before_batches_keep_a_market_whole(tmp_path, monkeypat
     assert got[("M-1", 0)][0] == pytest.approx(0.22)
     assert got[("M-1", 1)][0] == pytest.approx(0.11)
     assert got[("M-2", 0)][0] == pytest.approx(0.33)
+
+
+def test_iter_fills_streams_the_same_rows_as_read_all(tmp_path):
+    """iter_fills is the memory-bounded replacement for read_all(). If the two
+    ever disagree, every consumer moved onto the stream silently changes its
+    answer -- so pin them equal rather than trusting the refactor."""
+    store = TradeStore(tmp_path)
+    rows = []
+    for i in range(50):
+        month = "2026-05" if i % 2 else "2026-06"
+        rows.append({
+            "trade_id": f"t{i}", "ticker": f"KX-{i % 7}", "count_fp": float(i),
+            "yes_price_dollars": 0.5, "no_price_dollars": 0.5,
+            "taker_outcome_side": "yes" if i % 3 else None,
+            "taker_book_side": "no", "taker_side": None,
+            "created_time": f"{month}-1{i % 9}T12:00:00Z",
+            "is_block_trade": False, "source": "live",
+        })
+    store.append(rows)
+
+    eager = store.read_all().sort("trade_id")
+    streamed = pl.concat(list(store.iter_fills(batch_rows=7)), how="diagonal").sort("trade_id")
+    assert streamed.select(sorted(eager.columns)).equals(eager.select(sorted(eager.columns)))
+
+
+def test_iter_fills_pushes_the_ticker_and_column_filters_down(tmp_path):
+    store = TradeStore(tmp_path)
+    store.append([
+        {"trade_id": f"t{i}", "ticker": f"KX-{i}", "count_fp": 1.0,
+         "yes_price_dollars": 0.5, "no_price_dollars": 0.5,
+         "taker_outcome_side": "yes", "taker_book_side": "no", "taker_side": None,
+         "created_time": "2026-05-01T12:00:00Z", "is_block_trade": False, "source": "live"}
+        for i in range(5)
+    ])
+    got = pl.concat(list(store.iter_fills(tickers=["KX-1", "KX-3"], columns=["ticker", "count_fp"])))
+    assert got.columns == ["ticker", "count_fp"]
+    assert sorted(got["ticker"].to_list()) == ["KX-1", "KX-3"]
+    # an empty scope must yield nothing rather than everything
+    assert list(store.iter_fills(tickers=[])) == []

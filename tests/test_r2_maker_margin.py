@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 from kalshi_mt.fees.returns import counterfactual_return, gross_return, three_layer_return
 from kalshi_mt.fees.schedule import load_fee_schedule
@@ -270,3 +271,56 @@ def test_post_boundary_maker_fee_makes_layer_b_diverge_from_layer_c():
     assert result.layer_b is not None
     assert result.layer_c is not None
     assert result.layer_b < result.layer_c
+
+
+def test_streamed_chunks_match_one_materialised_frame():
+    """The maker-margin report now streams the tape (cli.py hands this
+    TradeStore.iter_fills(...)) and keeps compensated running means instead of
+    lists. Both are invisible refactors only if a chunked pass reproduces the
+    single-frame answer exactly -- including the layer counts and the
+    fee-gap exclusions, not just the margins."""
+    rows = []
+    for i in range(40):
+        rows.append(_trade(
+            trade_id=f"s{i}",
+            ticker=MAKER_FEE_SERIES if i % 2 else "KXOTHER",
+            yes_price=0.40 + (i % 6) * 0.10,          # straddles the 0.50 band edge
+            taker_outcome_side="yes" if i % 3 else "no",
+            created_time="2025-09-01T00:00:00Z" if i % 4 else "2024-01-01T00:00:00Z",
+            count_fp=1.0 + i,
+        ))
+    frame = _df(rows)
+    scope = {MAKER_FEE_SERIES, "KXOTHER"}
+    resolutions = {t: ("yes" if n % 2 else "no") for n, t in enumerate(sorted(scope))}
+    series_by_ticker = {t: t for t in scope}
+    schedule = _minimal_schedule()
+
+    whole = compute_maker_margin_ge_50c(frame, resolutions, series_by_ticker, schedule, scope)
+    for size in (1, 3, 9, len(rows)):
+        chunks = [frame.slice(i, size) for i in range(0, len(frame), size)]
+        streamed = compute_maker_margin_ge_50c(
+            chunks, resolutions, series_by_ticker, schedule, scope
+        )
+        assert streamed == whole, f"chunk size {size} diverged"
+
+
+def test_compensated_mean_matches_numpy_on_a_long_run():
+    """The lists went away because they were O(fills); the means must not have
+    drifted with them. Neumaier summation over values whose magnitudes differ
+    by orders of magnitude is where naive accumulation shows up first."""
+    import numpy as np
+
+    from kalshi_mt.r2.maker_margin import _Mean
+
+    values = [1e8, 1.0, -1e8, 3.0] * 25_000
+    acc = _Mean()
+    for v in values:
+        acc.add(v)
+    assert acc.n == len(values)
+    assert acc.mean == pytest.approx(float(np.mean(values)), rel=0, abs=1e-9)
+
+
+def test_empty_stream_and_empty_scope_are_the_empty_result():
+    empty = compute_maker_margin_ge_50c(iter([]), {}, {}, _minimal_schedule(), {"KX-1"})
+    assert empty.layer_a is None and empty.n_maker_a == 0 and empty.gap_excluded_b == 0
+    assert compute_maker_margin_ge_50c(_df([]), {}, {}, _minimal_schedule(), set()) == empty

@@ -137,7 +137,7 @@ fee-sensitivity ribbon with a pre-registered "fragile" rule).
 ## Project status
 
 All ten phases in the engineering brief are implemented and tested
-(**434/434 tests passing**):
+(**441/441 tests passing**):
 
 - [x] Phase 0 — scaffold, config, CLI skeleton, scope guard
 - [x] Phase 1 — Step Zero: the hard gate verifying Kalshi's public API has

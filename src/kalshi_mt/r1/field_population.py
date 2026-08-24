@@ -20,12 +20,18 @@ actually sampled.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from typing import Any
 
 import polars as pl
 
 from kalshi_mt.util import iso_to_epoch
+
+POPULATION_COLUMNS = ("taker_outcome_side", "taker_book_side", "taker_side")
+# The columns this module actually reads. Passed to TradeStore.iter_fills so a
+# streamed pass carries four columns per row instead of eleven.
+REQUIRED_COLUMNS = ("created_time", *POPULATION_COLUMNS)
 
 # Same boundaries as stepzero/checks.py's check_taker_field_population,
 # plus a fifth R2-window bucket -- Pass 2 also fetches R2-era trades, and
@@ -58,44 +64,74 @@ def _era_label(created_time: str | None) -> str | None:
 UNASSIGNED_KEY = "_unassigned"
 
 
-def _bucket_stats(bucket_df: pl.DataFrame) -> dict[str, Any]:
-    n = len(bucket_df)
-    if n == 0:
-        return {"trade_count": 0}
-    return {
-        "trade_count": n,
-        "taker_outcome_side_population": round(bucket_df["taker_outcome_side"].is_not_null().sum() / n, 4),
-        "taker_book_side_population": round(bucket_df["taker_book_side"].is_not_null().sum() / n, 4),
-        "taker_side_legacy_population": round(bucket_df["taker_side"].is_not_null().sum() / n, 4),
-    }
+def _chunks(trades: pl.DataFrame | Iterable[pl.DataFrame]) -> Iterator[pl.DataFrame]:
+    """One frame or a stream of them, so the caller chooses whether the tape
+    is materialised. See field_population_by_era's docstring for why."""
+    if isinstance(trades, pl.DataFrame):
+        yield trades
+    else:
+        yield from trades
 
 
-def field_population_by_era(trades: pl.DataFrame) -> dict[str, dict[str, Any]]:
-    """`trades` is Pass 2's raw tape (store/parquet.py's TradeStore.read_all()
-    or read_for_ticker) -- every column it needs (created_time,
+def field_population_by_era(
+    trades: pl.DataFrame | Iterable[pl.DataFrame],
+) -> dict[str, dict[str, Any]]:
+    """`trades` is Pass 2's raw tape -- every column it needs (created_time,
     taker_outcome_side, taker_book_side, taker_side) is already part of
     fetch/pass2.py's own row shape, so this is a pure aggregation with no
     new fetch required. Eras with zero trades in the tape still appear in
     the result (trade_count=0) rather than being omitted, so a reader can
     see which eras Pass 2 simply hasn't reached yet.
 
+    Accepts EITHER one DataFrame or an iterable of them, and accumulates
+    counts rather than filtering a whole frame per era. Small callers and the
+    tests pass a frame; `kmt r1` passes TradeStore.iter_fills(...), because
+    the tape it would otherwise materialise is several GB compressed and
+    read_all() on it is the same failure that killed Pass 2 on 2026-08-24
+    (`memory allocation of 635487952 bytes failed`). Counting per chunk makes
+    peak memory a property of the batch size, not of how much has been
+    collected -- and the result is identical either way, which
+    test_field_population.py pins directly.
+
     Also always reports a reserved `_unassigned` bucket -- trades whose
     created_time is unparseable, or whose epoch falls outside every span in
     ERA_BOUNDARIES (today: before 2021-01-01 or at/after 2027-01-01) -- so a
     reader can tell "this era genuinely has zero trades" apart from "some
     trades exist but couldn't be placed," rather than both looking like the
-    same silent zero (the same absence-must-never-be-ambiguous principle
-    this diff's spread-filter fix is built on)."""
-    era_labels = [label for label, _, _ in ERA_BOUNDARIES]
-    if trades.is_empty():
-        return {label: {"trade_count": 0} for label in era_labels + [UNASSIGNED_KEY]}
+    same silent zero."""
+    keys = [label for label, _, _ in ERA_BOUNDARIES] + [UNASSIGNED_KEY]
+    totals: dict[str, dict[str, int]] = {
+        k: {"trade_count": 0, **{c: 0 for c in POPULATION_COLUMNS}} for k in keys
+    }
 
-    df = trades.with_columns(
-        pl.col("created_time").map_elements(_era_label, return_dtype=pl.String).alias("era")
-    )
+    for chunk in _chunks(trades):
+        if chunk.is_empty():
+            continue
+        df = chunk.with_columns(
+            pl.col("created_time").map_elements(_era_label, return_dtype=pl.String).alias("era")
+        )
+        for key in keys:
+            bucket = (
+                df.filter(pl.col("era").is_null())
+                if key == UNASSIGNED_KEY
+                else df.filter(pl.col("era") == key)
+            )
+            if bucket.is_empty():
+                continue
+            totals[key]["trade_count"] += len(bucket)
+            for col in POPULATION_COLUMNS:
+                totals[key][col] += int(bucket[col].is_not_null().sum())
 
     results: dict[str, dict[str, Any]] = {}
-    for label in era_labels:
-        results[label] = _bucket_stats(df.filter(pl.col("era") == label))
-    results[UNASSIGNED_KEY] = _bucket_stats(df.filter(pl.col("era").is_null()))
+    for key in keys:
+        n = totals[key]["trade_count"]
+        if n == 0:
+            results[key] = {"trade_count": 0}
+            continue
+        results[key] = {
+            "trade_count": n,
+            "taker_outcome_side_population": round(totals[key]["taker_outcome_side"] / n, 4),
+            "taker_book_side_population": round(totals[key]["taker_book_side"] / n, 4),
+            "taker_side_legacy_population": round(totals[key]["taker_side"] / n, 4),
+        }
     return results

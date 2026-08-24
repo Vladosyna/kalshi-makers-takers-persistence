@@ -126,3 +126,35 @@ def test_boundary_instant_2025_05_01_fee_regime_boundary_belongs_to_may_onward()
     result = field_population_by_era(_df(rows))
     assert result["2025-may-onward"]["trade_count"] == 1
     assert result["2025-jan-apr"]["trade_count"] == 0
+
+
+def test_streamed_chunks_match_one_materialised_frame():
+    """`kmt r1` now hands this TradeStore.iter_fills(...) instead of
+    read_all(), so a chunked pass must produce byte-identical output to the
+    single-frame pass the tests were written against. Chunk boundaries are
+    deliberately made to fall inside eras and inside null runs."""
+    rows = []
+    for i, created in enumerate(
+        ["2021-06-01T00:00:00Z", "2023-03-01T00:00:00Z", "2024-07-01T00:00:00Z",
+         "2025-02-01T00:00:00Z", "2025-09-01T00:00:00Z", "1999-01-01T00:00:00Z", "not-a-date"] * 4
+    ):
+        rows.append(_trade(
+            ticker=f"T-{i}", created_time=created, trade_id=f"x{i}",
+            taker_outcome_side=None if i % 3 == 0 else "yes",
+            taker_book_side=None if i % 4 == 0 else "no",
+            taker_side=None if i % 5 == 0 else "yes",
+        ))
+    frame = pl.DataFrame(rows, schema=TRADE_SCHEMA)
+
+    whole = field_population_by_era(frame)
+    for size in (1, 3, 7, len(rows)):
+        chunks = [frame.slice(i, size) for i in range(0, len(frame), size)]
+        assert field_population_by_era(chunks) == whole, f"chunk size {size} diverged"
+
+
+def test_empty_stream_reports_every_era_as_zero():
+    """An exhausted iterator must look like an empty tape, not like a crash or
+    a missing key -- the _unassigned bucket included."""
+    result = field_population_by_era(iter([]))
+    keys = [label for label, _, _ in ERA_BOUNDARIES] + [UNASSIGNED_KEY]
+    assert result == {k: {"trade_count": 0} for k in keys}

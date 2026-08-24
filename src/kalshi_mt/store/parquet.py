@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 
 import duckdb
@@ -41,6 +42,24 @@ DUCKDB_MEMORY_LIMIT_GB = 6
 # ~600 fills/market measured, so 5k markets is ~3M rows, comfortably inside the
 # limit. The cost is more passes over the tape, which is I/O the machine has.
 ASOF_TICKER_BATCH = 5_000
+
+# Rows per streamed batch out of iter_fills. Bounds peak memory for every
+# whole-tape consumer; 250k rows of the 11-column trade row is tens of MB.
+FILL_BATCH_ROWS = 250_000
+
+# iter_fills gets its own budget rather than sharing DUCKDB_MEMORY_LIMIT_GB.
+# The limit is per connection, not per machine, so an analysis read and a live
+# Pass 2 compaction each believe they own the whole allowance -- on 2026-08-24
+# they ran together and the read died with "failed to allocate data of size 8.0
+# KiB (6.4 GiB/5.5 GiB used)" while the machine still had free RAM. A separate
+# number makes that overlap explicit and tunable: 8GB here alongside the 6GB a
+# compaction may take is 14GB on a 27.7GB host, which leaves real headroom.
+#
+# It is also a floor, not a ceiling to economise on. Measured on month=2026-06
+# (42.7M fills) with the real 392,597-ticker R2 scope pushed into the scan, 2GB
+# failed outright and 3GB finished in 47s; the budget below buys the spilling
+# back as speed.
+FILL_STREAM_MEMORY_LIMIT_GB = 8
 # DuckDB sizes several buffers PER THREAD, so on a many-core machine the real
 # peak is a multiple of what one thread suggests. Capping threads trades some
 # speed for a peak that actually fits the budget above.
@@ -72,7 +91,26 @@ def _duckdb_connect() -> duckdb.DuckDBPyConnection:
     late.
     """
     con = duckdb.connect()
-    spill = PROJECT_ROOT / "data" / "duckdb_spill"
+    # A spill directory PER CONNECTION, not one shared by all of them. Two
+    # DuckDB instances pointed at the same temp_directory collide over their
+    # scratch files: on 2026-08-24, an analysis read running beside Pass 2's
+    # compaction died with `IO Error: Failed to delete file
+    # ".../duckdb_temp_storage_S224K-0.tmp": The system cannot find the file
+    # specified` -- one connection had already removed what the other was
+    # still using. Analysis is expected to run while collection continues, so
+    # sharing was never safe.
+    root = PROJECT_ROOT / "data" / "duckdb_spill"
+    root.mkdir(parents=True, exist_ok=True)
+    # Housekeeping: a connection that exits without unwinding leaves its (now
+    # empty) directory behind. Pruning empties on the way in keeps that from
+    # accumulating without needing to track connection lifetimes.
+    for stale in root.iterdir():
+        if stale.is_dir():
+            try:
+                stale.rmdir()  # only succeeds when empty
+            except OSError:
+                pass
+    spill = root / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
     spill.mkdir(parents=True, exist_ok=True)
     con.execute(f"SET temp_directory = '{spill.as_posix()}'")
     con.execute(f"SET memory_limit = '{DUCKDB_MEMORY_LIMIT_GB}GB'")
@@ -239,7 +277,15 @@ class TradeStore:
 
     def read_for_ticker(self, ticker: str, months: list[str] | None = None) -> pl.DataFrame:
         """All trades for one ticker. Scans the given months (or every
-        partition on disk if not given) -- fine for R1/R2 analysis reads.
+        partition on disk if not given).
+
+        Goes through iter_fills so the ticker filter is pushed into the scan.
+        It used to call read_range, i.e. materialise EVERY month in full and
+        then filter one ticker out of it -- fine when the tape was small,
+        catastrophic now that one month alone is 39.7M fills, and the same
+        shape of mistake that killed Pass 2 on 2026-08-24. The result is
+        small by definition (one market's fills), so returning an eager frame
+        here is right; it was the scan that was wrong.
 
         Pass 2's RESUME state (cursor, endpoint family) lives in SQLite's
         pass2_progress, since that is what a restart needs. Its trade_count
@@ -247,10 +293,10 @@ class TradeStore:
         between the Parquet write and the SQLite commit -- use
         trade_count_by_ticker() for the completeness contract's fetched
         counts, which reads the tape itself."""
-        df = self.read_range(months if months is not None else self.months_on_disk())
-        if df.is_empty():
-            return df
-        return df.filter(pl.col("ticker") == ticker)
+        frames = list(self.iter_fills(tickers=[ticker], months=months))
+        if not frames:
+            return pl.DataFrame(schema=TRADE_SCHEMA)
+        return pl.concat(frames, how="diagonal")
 
     def dollar_volume_by_ticker(self) -> dict[str, float]:
         """Total dollar notional traded per ticker -- Sigma(count_fp *
@@ -426,3 +472,112 @@ class TradeStore:
         )
         result = _duckdb_connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
         return dict(zip(result["ticker"].to_list(), result["n"].to_list()))
+
+    def iter_fills(
+        self,
+        *,
+        tickers: Iterable[str] | None = None,
+        months: Sequence[str] | None = None,
+        columns: Sequence[str] | None = None,
+        batch_rows: int = FILL_BATCH_ROWS,
+    ) -> Iterator[pl.DataFrame]:
+        """Stream the tape in bounded batches instead of materialising it.
+
+        This exists because read_all() cannot survive the tape it now has to
+        read. It loads every partition into one Polars frame, and the tape is
+        already several GB compressed across all months -- one month alone
+        (2026-06) is 39.7M fills, and materialising THAT is what killed Pass 2
+        on 2026-08-24 with `memory allocation of 635487952 bytes failed`. Two
+        consumers were on that path and would have hit the same wall during
+        analysis rather than collection: r1/field_population.py and
+        r2/maker_margin.py, reached from `kmt r1` and the maker-margin report.
+
+        Memory here is bounded by batch_rows, not by the tape, because DuckDB
+        streams the aggregate's output through an Arrow reader. The GROUP BY
+        that dedups on trade_id is a spillable hash aggregate against
+        _duckdb_connect's memory limit and spill directory -- the same
+        machinery the compaction fix uses, and the reason Polars' own lazy
+        path was not used instead (its unique() is not streamable and falls
+        back to an in-memory hash; measured, it died exactly as the eager
+        version did).
+
+        `tickers` is pushed into the scan as a semi-join against a registered
+        frame rather than an IN list, so an in-scope set of a few hundred
+        thousand tickers costs nothing to express. `columns` defaults to the
+        full row and is returned in the order asked for.
+
+        Yields nothing at all when the store is empty, so a caller can treat
+        it as a plain iterable without a special case."""
+        on_disk = self.months_on_disk()
+        if not on_disk:
+            return
+        wanted = [m for m in (months if months is not None else on_disk) if m in on_disk]
+        if not wanted:
+            return
+        cols = list(columns) if columns else list(TRADE_SCHEMA)
+        unknown = [c for c in cols if c not in TRADE_SCHEMA]
+        if unknown:
+            raise ValueError(f"unknown trade columns: {unknown}")
+        con = _duckdb_connect()
+        con.execute(f"SET memory_limit = '{FILL_STREAM_MEMORY_LIMIT_GB}GB'")
+        # Order carries no meaning to any consumer (they aggregate), and
+        # preserving it makes DuckDB buffer the whole result -- which it says
+        # itself in the OOM it raises without this.
+        con.execute("SET preserve_insertion_order = false")
+        try:
+            where = ""
+            if tickers is not None:
+                scope = pl.DataFrame({"ticker": sorted(set(tickers))}, schema={"ticker": pl.String})
+                if scope.is_empty():
+                    return
+                con.register("scope_tickers", scope)
+                where = "WHERE t.ticker IN (SELECT ticker FROM scope_tickers)"
+            # trade_id is the group key, so it can be selected bare wherever the
+            # caller asked for it and simply omitted where they did not.
+            select = ", ".join(
+                't.trade_id' if c == "trade_id" else f'any_value(t."{c}") AS "{c}"'
+                for c in cols
+            )
+            # ONE MONTH PER QUERY, not one query over every partition. The
+            # dedup is a hash aggregate, and across the whole tape its hash
+            # does not fit: measured 2026-08-24 on the real 5.08GB/62-month
+            # store, a single global GROUP BY died with "could not allocate
+            # block of size 2.0 GiB (4.5 GiB/5.5 GiB used)" even with spilling
+            # enabled. Per month it is bounded by that month's distinct
+            # trade_ids and comfortably spillable -- the same shape that makes
+            # _maybe_compact work.
+            #
+            # Per-month dedup is not a weaker guarantee, it is the same one: a
+            # fill's partition is derived from its OWN created_time, so two
+            # copies of one trade_id always land in the same month and a
+            # duplicate can never straddle a partition boundary.
+            plain = ", ".join(f't."{c}"' for c in cols)
+            for month in wanted:
+                parts = self._part_files(month)
+                if not parts:
+                    continue
+                path = str(self.base / f"month={month}" / "*.parquet")
+                # A month held in ONE part file is already unique on trade_id --
+                # either it was just compacted (which groups by trade_id) or it
+                # only ever took a single append (which dedups its own batch).
+                # Skipping the aggregate there is not just faster, it is what
+                # keeps this inside the memory budget when something else is
+                # using DuckDB at the same time: on 2026-08-24 this query and
+                # Pass 2's compaction ran concurrently, each connection believed
+                # it owned the full limit, and the read died with "failed to
+                # allocate data of size 8.0 KiB (6.4 GiB/5.5 GiB used)". With the
+                # fast path the common case allocates no hash at all.
+                sql = (
+                    f"SELECT {plain} FROM read_parquet(?) t {where}"
+                    if len(parts) == 1
+                    else f"SELECT {select} FROM read_parquet(?) t {where} GROUP BY t.trade_id"
+                )
+                reader = con.execute(sql, [path]).to_arrow_reader(batch_rows)
+                for batch in reader:
+                    frame = pl.from_arrow(batch)
+                    if isinstance(frame, pl.Series):  # single-column results
+                        frame = frame.to_frame()
+                    if not frame.is_empty():
+                        yield frame
+        finally:
+            con.close()

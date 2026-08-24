@@ -37,10 +37,10 @@ rate); it simply cannot match a series-scoped entry.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 import polars as pl
 
 from kalshi_mt.fees.returns import counterfactual_return, gross_return, net_return
@@ -76,14 +76,71 @@ class MakerMarginResult:
     gap_excluded_c: int
 
 
-def _margin(maker: list[float], taker: list[float]) -> float | None:
-    if not maker or not taker:
+
+class _Mean:
+    """Running mean with Neumaier compensation.
+
+    The accumulators here used to be Python lists handed to np.mean. That is
+    accurate -- NumPy sums pairwise -- but it holds one float per in-band
+    side, and the whole point of streaming the tape is not to hold O(fills)
+    of anything. Naive running addition over tens of millions of values
+    drifts; compensated addition does not, and costs one extra float."""
+
+    __slots__ = ("_total", "_comp", "n")
+
+    def __init__(self) -> None:
+        self._total = 0.0
+        self._comp = 0.0
+        self.n = 0
+
+    def add(self, x: float) -> None:
+        total = self._total + x
+        if abs(self._total) >= abs(x):
+            self._comp += (self._total - total) + x
+        else:
+            self._comp += (x - total) + self._total
+        self._total = total
+        self.n += 1
+
+    @property
+    def mean(self) -> float | None:
+        return None if self.n == 0 else (self._total + self._comp) / self.n
+
+
+def _margin(maker: _Mean, taker: _Mean) -> float | None:
+    if maker.mean is None or taker.mean is None:
         return None
-    return float(np.mean(maker)) - float(np.mean(taker))
+    return maker.mean - taker.mean
+
+
+def _chunks(trades: pl.DataFrame | Iterable[pl.DataFrame]) -> Iterator[pl.DataFrame]:
+    """One frame or a stream of them, so the caller decides whether the tape
+    gets materialised. See compute_maker_margin_ge_50c."""
+    if isinstance(trades, pl.DataFrame):
+        yield trades
+    else:
+        yield from trades
+
+
+# What this module actually reads off each fill. Handed to
+# TradeStore.iter_fills so a streamed pass carries five columns, not eleven.
+REQUIRED_COLUMNS = (
+    "ticker",
+    "count_fp",
+    "yes_price_dollars",
+    "taker_outcome_side",
+    "created_time",
+)
+
+_EMPTY_RESULT = MakerMarginResult(
+    layer_a=None, layer_b=None, layer_c=None,
+    n_maker_a=0, n_taker_a=0, n_maker_b=0, n_taker_b=0, n_maker_c=0, n_taker_c=0,
+    gap_excluded_b=0, gap_excluded_c=0,
+)
 
 
 def compute_maker_margin_ge_50c(
-    trades: pl.DataFrame,
+    trades: pl.DataFrame | Iterable[pl.DataFrame],
     resolutions: dict[str, str],
     series_by_ticker: dict[str, str | None],
     fee_schedule: dict[str, Any],
@@ -98,81 +155,85 @@ def compute_maker_margin_ge_50c(
     per role. `resolutions` is {ticker: 'yes'|'no'}, `series_by_ticker` is
     {ticker: series_ticker-or-None} (looked up by the caller, e.g. from the
     markets table), `fee_schedule` is fees/schedule.py's loaded dict.
-    """
-    empty = MakerMarginResult(
-        layer_a=None, layer_b=None, layer_c=None,
-        n_maker_a=0, n_taker_a=0, n_maker_b=0, n_taker_b=0, n_maker_c=0, n_taker_c=0,
-        gap_excluded_b=0, gap_excluded_c=0,
-    )
-    if trades.is_empty() or not in_scope_tickers:
-        return empty
 
-    trades = trades.filter(pl.col("ticker").is_in(list(in_scope_tickers)))
-    maker_a: list[float] = []
-    taker_a: list[float] = []
-    maker_b: list[float] = []
-    taker_b: list[float] = []
-    maker_c: list[float] = []
-    taker_c: list[float] = []
+    Accepts EITHER one DataFrame or an iterable of them, and keeps running
+    means rather than lists of every return. Both changes are the same fix:
+    the tape this runs over is several GB compressed, TradeStore.read_all()
+    on it is what killed Pass 2 on 2026-08-24 with `memory allocation of
+    635487952 bytes failed`, and six lists holding one float per in-band side
+    would not have fitted either even if the frame had. Callers with a real
+    tape should pass
+    TradeStore.iter_fills(tickers=in_scope_tickers, columns=REQUIRED_COLUMNS);
+    tests pass a frame, and test_maker_margin.py pins that the two agree to
+    the bit."""
+    if not in_scope_tickers:
+        return _EMPTY_RESULT
+
+    # A plain list, not a Series: polars deprecated is_in against a
+    # same-dtype collection as ambiguous (pola-rs/polars#22149).
+    scope = sorted(in_scope_tickers)
+    maker_a, taker_a = _Mean(), _Mean()
+    maker_b, taker_b = _Mean(), _Mean()
+    maker_c, taker_c = _Mean(), _Mean()
     gap_excluded_b = 0
     gap_excluded_c = 0
 
-    for row in trades.iter_rows(named=True):
-        ticker = row["ticker"]
-        result = resolutions.get(ticker)
-        taker_side = row["taker_outcome_side"]
-        yes_price = row["yes_price_dollars"]
-        count_fp = row["count_fp"]
-        created_time = row["created_time"]
-        if result not in ("yes", "no") or taker_side not in ("yes", "no") or yes_price is None:
+    for chunk in _chunks(trades):
+        if chunk.is_empty():
             continue
-        if not (0.0 < yes_price < 1.0):
+        chunk = chunk.filter(pl.col("ticker").is_in(scope))
+        if chunk.is_empty():
             continue
-        if count_fp is None or count_fp <= 0:
-            continue
-        if created_time is None:
-            continue
-        series_ticker = series_by_ticker.get(ticker)
 
-        payout_yes = 1.0 if result == "yes" else 0.0
-        yes_role = "taker" if taker_side == "yes" else "maker"
-        no_role = "taker" if taker_side == "no" else "maker"
-
-        for side_price, side_role, side_payout in (
-            (yes_price, yes_role, payout_yes),
-            (1.0 - yes_price, no_role, 1.0 - payout_yes),
-        ):
-            if side_price < 0.5:
+        for row in chunk.iter_rows(named=True):
+            ticker = row["ticker"]
+            result = resolutions.get(ticker)
+            taker_side = row["taker_outcome_side"]
+            yes_price = row["yes_price_dollars"]
+            count_fp = row["count_fp"]
+            created_time = row["created_time"]
+            if result not in ("yes", "no") or taker_side not in ("yes", "no") or yes_price is None:
                 continue
+            if not (0.0 < yes_price < 1.0):
+                continue
+            if count_fp is None or count_fp <= 0:
+                continue
+            if created_time is None:
+                continue
+            series_ticker = series_by_ticker.get(ticker)
 
-            gross = gross_return(side_payout, side_price)
-            net = net_return(
-                fee_schedule, side_role, count_fp, side_payout, side_price, created_time,
-                market_ticker=ticker, series_ticker=series_ticker,
-            )
-            cf = counterfactual_return(
-                fee_schedule, side_role, count_fp, side_payout, side_price,
-                market_ticker=ticker, series_ticker=series_ticker,
-            )
+            payout_yes = 1.0 if result == "yes" else 0.0
+            yes_role = "taker" if taker_side == "yes" else "maker"
+            no_role = "taker" if taker_side == "no" else "maker"
 
-            if side_role == "maker":
-                maker_a.append(gross)
+            for side_price, side_role, side_payout in (
+                (yes_price, yes_role, payout_yes),
+                (1.0 - yes_price, no_role, 1.0 - payout_yes),
+            ):
+                if side_price < 0.5:
+                    continue
+
+                gross = gross_return(side_payout, side_price)
+                net = net_return(
+                    fee_schedule, side_role, count_fp, side_payout, side_price, created_time,
+                    market_ticker=ticker, series_ticker=series_ticker,
+                )
+                cf = counterfactual_return(
+                    fee_schedule, side_role, count_fp, side_payout, side_price,
+                    market_ticker=ticker, series_ticker=series_ticker,
+                )
+
+                a, b, c = (
+                    (maker_a, maker_b, maker_c) if side_role == "maker"
+                    else (taker_a, taker_b, taker_c)
+                )
+                a.add(gross)
                 if net is not None:
-                    maker_b.append(net)
+                    b.add(net)
                 else:
                     gap_excluded_b += 1
                 if cf is not None:
-                    maker_c.append(cf)
-                else:
-                    gap_excluded_c += 1
-            else:
-                taker_a.append(gross)
-                if net is not None:
-                    taker_b.append(net)
-                else:
-                    gap_excluded_b += 1
-                if cf is not None:
-                    taker_c.append(cf)
+                    c.add(cf)
                 else:
                     gap_excluded_c += 1
 
@@ -180,12 +241,12 @@ def compute_maker_margin_ge_50c(
         layer_a=_margin(maker_a, taker_a),
         layer_b=_margin(maker_b, taker_b),
         layer_c=_margin(maker_c, taker_c),
-        n_maker_a=len(maker_a),
-        n_taker_a=len(taker_a),
-        n_maker_b=len(maker_b),
-        n_taker_b=len(taker_b),
-        n_maker_c=len(maker_c),
-        n_taker_c=len(taker_c),
+        n_maker_a=maker_a.n,
+        n_taker_a=taker_a.n,
+        n_maker_b=maker_b.n,
+        n_taker_b=taker_b.n,
+        n_maker_c=maker_c.n,
+        n_taker_c=taker_c.n,
         gap_excluded_b=gap_excluded_b,
         gap_excluded_c=gap_excluded_c,
     )
