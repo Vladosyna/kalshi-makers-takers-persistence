@@ -88,7 +88,15 @@ function Set-ConfigToPass2() {
         'args'           = @('fetch', 'pass2', '--window', 'r2')
     }
     if ($DryRun) { Emit "DRYRUN would rewrite config to: kmt $($cfg.args -join ' ')"; return }
-    $cfg | ConvertTo-Json -Depth 4 | Set-Content -Path $ConfigPath -Encoding utf8
+    # WriteAllText with a BOM-less encoder, not Set-Content -Encoding utf8:
+    # PowerShell 5.1's "utf8" means utf8-WITH-BOM, and json.load() in Python
+    # rejects that outright. Measured cost of getting it wrong, 2026-08-25: the
+    # edit that should have disabled a finished phase threw instead, the config
+    # stayed enabled, and the restart script cheerfully launched Pass 2 again
+    # with nothing left to fetch.
+    [IO.File]::WriteAllText(
+        $ConfigPath, ($cfg | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding $false)
+    )
     Emit "config repointed -> kmt $($cfg.args -join ' ')"
 }
 
