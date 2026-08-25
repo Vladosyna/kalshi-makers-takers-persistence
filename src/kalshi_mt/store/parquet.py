@@ -319,6 +319,40 @@ class TradeStore:
             return pl.DataFrame(schema=TRADE_SCHEMA)
         return pl.concat(frames, how="diagonal")
 
+    def _aggregate_connection(self) -> duckdb.DuckDBPyConnection:
+        """A connection tuned for whole-tape aggregates -- same budget and the
+        same insertion-order setting as iter_fills, for the same reasons."""
+        con = _duckdb_connect()
+        con.execute(f"SET memory_limit = '{FILL_STREAM_MEMORY_LIMIT_GB}GB'")
+        con.execute("SET preserve_insertion_order = false")
+        return con
+
+    def _per_month(
+        self, con: duckdb.DuckDBPyConnection, deduped_sql: str, unique_sql: str
+    ) -> Iterator[pl.DataFrame]:
+        """Run a per-ticker aggregate ONE MONTH AT A TIME and yield each result.
+
+        Whole-tape aggregates in a single query stopped fitting: `kmt build`
+        died on 2026-08-25 in dollar_volume_by_ticker with "failed to allocate
+        data of size 4.0 MiB (5.5 GiB/5.5 GiB used)" over 376.8M fills. Per
+        month the dedup is bounded by that month's distinct trade_ids and
+        spills cleanly, exactly as it does in iter_fills and _maybe_compact.
+
+        Combining the months afterwards is sound rather than approximate: a
+        fill's partition is derived from its own created_time, so a trade_id
+        lives in exactly one month, and per-ticker sums and counts are additive
+        across partitions with no double counting to worry about.
+
+        `unique_sql` is used for a month already compacted to a single part
+        file, which is unique on trade_id by construction and needs no dedup at
+        all."""
+        for month in self.months_on_disk():
+            parts = self._part_files(month)
+            if not parts:
+                continue
+            path = str(self.base / f"month={month}" / "*.parquet")
+            yield con.execute(unique_sql if len(parts) == 1 else deduped_sql, [path]).pl()
+
     def dollar_volume_by_ticker(self) -> dict[str, float]:
         """Total dollar notional traded per ticker -- Sigma(count_fp *
         yes_price_dollars) across every fill -- the input to r1/filters.py's
@@ -339,14 +373,28 @@ class TradeStore:
         multi-million-row dataset, so it stays the default here too."""
         if not self.months_on_disk():
             return {}
-        query = (
-            "SELECT ticker, SUM(count_fp * yes_price_dollars) AS dollar_volume FROM ("
-            "  SELECT DISTINCT ON (trade_id) trade_id, ticker, count_fp, yes_price_dollars "
-            "  FROM read_parquet(?)"
+        # GROUP BY, not DISTINCT ON: the latter is a sort, and a sort does not
+        # spill here -- the same swap the ASOF path already made.
+        deduped = (
+            "SELECT ticker, SUM(dv) AS dollar_volume FROM ("
+            "  SELECT any_value(ticker) AS ticker,"
+            "         any_value(count_fp * yes_price_dollars) AS dv"
+            "  FROM read_parquet(?) GROUP BY trade_id"
             ") GROUP BY ticker"
         )
-        result = _duckdb_connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
-        return dict(zip(result["ticker"].to_list(), result["dollar_volume"].to_list()))
+        unique = (
+            "SELECT ticker, SUM(count_fp * yes_price_dollars) AS dollar_volume "
+            "FROM read_parquet(?) GROUP BY ticker"
+        )
+        totals: dict[str, float] = {}
+        con = self._aggregate_connection()
+        try:
+            for frame in self._per_month(con, deduped, unique):
+                for t, v in zip(frame["ticker"].to_list(), frame["dollar_volume"].to_list()):
+                    totals[t] = totals.get(t, 0.0) + (v or 0.0)
+        finally:
+            con.close()
+        return totals
 
     def last_trade_at_or_before(
         self, refs: list[tuple[str, int, int]],
@@ -488,11 +536,21 @@ class TradeStore:
         Same DuckDB-not-polars reasoning as dollar_volume_by_ticker above."""
         if not self.months_on_disk():
             return {}
-        query = (
-            "SELECT ticker, COUNT(DISTINCT trade_id) AS n FROM read_parquet(?) GROUP BY ticker"
+        deduped = (
+            "SELECT ticker, COUNT(*) AS n FROM ("
+            "  SELECT any_value(ticker) AS ticker FROM read_parquet(?) GROUP BY trade_id"
+            ") GROUP BY ticker"
         )
-        result = _duckdb_connect().execute(query, [str(self.base / "month=*" / "*.parquet")]).pl()
-        return dict(zip(result["ticker"].to_list(), result["n"].to_list()))
+        unique = "SELECT ticker, COUNT(*) AS n FROM read_parquet(?) GROUP BY ticker"
+        totals: dict[str, int] = {}
+        con = self._aggregate_connection()
+        try:
+            for frame in self._per_month(con, deduped, unique):
+                for t, n in zip(frame["ticker"].to_list(), frame["n"].to_list()):
+                    totals[t] = totals.get(t, 0) + int(n or 0)
+        finally:
+            con.close()
+        return totals
 
     def iter_fills(
         self,

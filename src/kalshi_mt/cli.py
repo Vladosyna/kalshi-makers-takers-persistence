@@ -791,13 +791,15 @@ def _compute_escalation(config: dict) -> dict:
         # fee at all.
         resolutions, series_by_ticker = {}, {}
         if r2_scope:
-            placeholders = ",".join("?" * len(r2_scope))
-            for row in conn.execute(
-                f"SELECT ticker, result, series_ticker FROM markets WHERE ticker IN ({placeholders})",
-                list(r2_scope),
-            ).fetchall():
-                resolutions[row["ticker"]] = row["result"]
-                series_by_ticker[row["ticker"]] = row["series_ticker"]
+            # TEMP-table join rather than an IN list -- r2_scope is 392,597
+            # tickers and SQLite binds at most 32,766 variables per statement.
+            with db.ticker_scope(conn, r2_scope) as scope:
+                for row in conn.execute(
+                    f"SELECT m.ticker, m.result, m.series_ticker FROM markets m "
+                    f"JOIN {scope} s ON s.ticker = m.ticker"
+                ).fetchall():
+                    resolutions[row["ticker"]] = row["result"]
+                    series_by_ticker[row["ticker"]] = row["series_ticker"]
     finally:
         conn.close()
 

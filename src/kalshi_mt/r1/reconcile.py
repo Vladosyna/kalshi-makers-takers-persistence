@@ -23,6 +23,8 @@ from typing import Any
 
 import polars as pl
 
+from kalshi_mt.store.db import ticker_scope
+
 from kalshi_mt.util import now_utc_iso
 
 BDW_TARGETS: dict[str, int] = {
@@ -43,13 +45,16 @@ def reconcile_counts(conn, yes_only: pl.DataFrame, doubled: pl.DataFrame) -> dic
     least reviewed) -- spec's own sequencing rule."""
     n_events = 0
     if not yes_only.is_empty():
+        # A TEMP-table join, not an IN list: this counted one SQL variable per
+        # contract until 2026-08-25, when the panel outgrew SQLite's 32,766
+        # limit and `kmt build` died here with "too many SQL variables".
         tickers = yes_only["ticker"].unique().to_list()
-        placeholders = ",".join("?" * len(tickers))
-        n_events = conn.execute(
-            f"SELECT COUNT(DISTINCT event_ticker) FROM markets "
-            f"WHERE ticker IN ({placeholders}) AND event_ticker IS NOT NULL",
-            tickers,
-        ).fetchone()[0]
+        with ticker_scope(conn, tickers) as scope:
+            n_events = conn.execute(
+                f"SELECT COUNT(DISTINCT m.event_ticker) FROM markets m "
+                f"JOIN {scope} s ON s.ticker = m.ticker "
+                f"WHERE m.event_ticker IS NOT NULL"
+            ).fetchone()[0]
 
     n_contracts = yes_only["ticker"].n_unique() if not yes_only.is_empty() else 0
     n_yes_prices = len(yes_only)

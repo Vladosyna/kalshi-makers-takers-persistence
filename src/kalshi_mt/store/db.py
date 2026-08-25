@@ -9,6 +9,8 @@ picked back up without re-doing finished work or double-counting trades.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from kalshi_mt.util import PROJECT_ROOT, now_utc_iso
@@ -251,6 +253,38 @@ def in_scope_tickers(conn: sqlite3.Connection, window: str) -> set[str]:
         (window,),
     ).fetchall()
     return {r[0] for r in rows}
+
+
+@contextmanager
+def ticker_scope(
+    conn: sqlite3.Connection, tickers: Iterable[str], *, name: str = "_ticker_scope"
+) -> Iterator[str]:
+    """Materialise a ticker set as a TEMP table and yield its name to JOIN on.
+
+    Binding one SQL variable per ticker does not scale, and it has already
+    broken: `kmt build` died on 2026-08-25 with `OperationalError: too many SQL
+    variables` inside reconcile_counts, because R1's panel had grown past
+    SQLite's SQLITE_LIMIT_VARIABLE_NUMBER of 32,766. The other site doing the
+    same thing -- the maker-margin report's resolution lookup -- would have
+    failed far harder still, since R2's in-scope set is 392,597 tickers. Both
+    were written when the universe was small enough for the difference not to
+    show.
+
+    A TEMP table has no such ceiling, carries a primary-key index for the join,
+    and works on a read-only connection: SQLite keeps temp objects in a
+    separate temp database rather than the main one. That last part was
+    verified rather than assumed, because several tools here open the store
+    read-only.
+    """
+    if not name.isidentifier():
+        raise ValueError(f"unsafe temp table name: {name!r}")
+    conn.execute(f"CREATE TEMP TABLE IF NOT EXISTS {name} (ticker TEXT PRIMARY KEY)")
+    conn.execute(f"DELETE FROM {name}")
+    conn.executemany(f"INSERT OR IGNORE INTO {name}(ticker) VALUES (?)", ((t,) for t in tickers))
+    try:
+        yield name
+    finally:
+        conn.execute(f"DROP TABLE IF EXISTS {name}")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str) -> None:
