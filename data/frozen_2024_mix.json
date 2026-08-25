@@ -1,20 +1,20 @@
 {
-  "computed_ts": "2026-07-26T22:31:15+00:00",
+  "computed_ts": "2026-08-25T13:14:58+00:00",
   "basis": "yes_only_contract_count",
   "source_window": "calendar_2024",
   "weights": {
-    "Politics": 0.03352967829632986,
-    "Economics": 0.06388763026733121,
-    "Crypto": 0.0088808337109198,
-    "Elections": 0.0020842772995015857,
-    "Financials": 0.3068418667874943,
-    "Commodities": 0.004259175351155414,
-    "Health": 0.00027186225645672857,
-    "Sports": 9.062075215224287e-05,
-    "Entertainment": 0.09605799728137744,
-    "Science and Technology": 0.006343452650657001,
-    "Companies": 0.00045310376076121433,
-    "Climate and Weather": 0.47711826008155866,
-    "World": 0.00018124150430448574
+    "Financials": 0.3047448522829006,
+    "Health": 0.00026857654431512983,
+    "Companies": 0.0004476275738585497,
+    "Sports": 8.952551477170994e-05,
+    "Elections": 0.0020590868397493286,
+    "Crypto": 0.008773500447627574,
+    "Politics": 0.033303491495076096,
+    "World": 0.00017905102954341988,
+    "Commodities": 0.004565801253357207,
+    "Climate and Weather": 0.474395702775291,
+    "Economics": 0.06902417188898836,
+    "Science and Technology": 0.006266786034019696,
+    "Entertainment": 0.09588182632050134
   }
 }
