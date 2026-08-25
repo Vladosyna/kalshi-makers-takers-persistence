@@ -1,0 +1,503 @@
+{
+  "locked_ts": "2026-08-25T19:01:00+00:00",
+  "r2_filters": {
+    "total": 14907046,
+    "passed": 391427,
+    "failed": 14515619,
+    "reason_counts": {
+      "open_below_24h": 12537664,
+      "volume_below_1000": 11792549,
+      "spread_filter_not_yet_fetched": 14037660,
+      "spread_filter_not_computable": 119352,
+      "spread_above_20c": 347880,
+      "result_missing_or_invalid": 68594
+    }
+  },
+  "psi_bar_r1": 0.02542793851131549,
+  "r1_panel_n": 124732,
+  "r2_panel_n": 1205713,
+  "pooled_panel_n": 1330445,
+  "categories_fit": [
+    "Climate and Weather",
+    "Commodities",
+    "Companies",
+    "Crypto",
+    "Economics",
+    "Elections",
+    "Entertainment",
+    "Exotics",
+    "Financials",
+    "Health",
+    "Mentions",
+    "Politics",
+    "Science and Technology",
+    "Social",
+    "Sports",
+    "Transportation",
+    "World"
+  ],
+  "delta_bar": {
+    "fee": {
+      "delta_bar": 0.03987348396387958,
+      "ci_lo": 0.007108425437346813,
+      "ci_hi": 0.07263854249041235
+    },
+    "publication": {
+      "delta_bar": -0.031114579933574804,
+      "ci_lo": -0.06367580657941482,
+      "ci_hi": 0.001446646712265208
+    }
+  },
+  "verdict": {
+    "fee": "indeterminate",
+    "publication": "indeterminate"
+  },
+  "decomposition": {
+    "fee": {
+      "within": 0.03987348396387958,
+      "between": 0.02782224540669248,
+      "aggregate": 0.06769572937057206,
+      "per_category": {
+        "Climate and Weather": {
+          "w_bar": 0.474395702775291,
+          "w_r2": 0.09953145438194899,
+          "delta_w": -0.374864248393342,
+          "delta_psi_c": -0.00018121925962344366,
+          "psi_bar_c": 0.024059521290395375,
+          "within_contribution": -8.596963802548146e-05,
+          "between_contribution": -0.009019054365227671
+        },
+        "Commodities": {
+          "w_bar": 0.004565801253357207,
+          "w_r2": 0.010331507521255723,
+          "delta_w": 0.005765706267898516,
+          "delta_psi_c": -0.9246468484806689,
+          "psi_bar_c": -0.07535315151931563,
+          "within_contribution": -0.0042217537397058295,
+          "between_contribution": -0.00043446413802082466
+        },
+        "Companies": {
+          "w_bar": 0.0004476275738585497,
+          "w_r2": 0.00020693672334859384,
+          "delta_w": -0.00024069085050995584,
+          "delta_psi_c": -0.11736120721088979,
+          "psi_bar_c": 0.20509120745064735,
+          "within_contribution": -5.253411244892112e-05,
+          "between_contribution": -4.93635771534101e-05
+        },
+        "Crypto": {
+          "w_bar": 0.008773500447627574,
+          "w_r2": 0.01006070143884892,
+          "delta_w": 0.0012872009912213468,
+          "delta_psi_c": -0.0049713755369048375,
+          "psi_bar_c": 0.11796474832361557,
+          "within_contribution": -4.3616365498359365e-05,
+          "between_contribution": 0.00015184434097133468
+        },
+        "Economics": {
+          "w_bar": 0.06902417188898836,
+          "w_r2": 0.008630027795945062,
+          "delta_w": -0.060394144093043306,
+          "delta_psi_c": 0.027301071248503915,
+          "psi_bar_c": 0.0264021963436025,
+          "within_contribution": 0.0018844338346102525,
+          "between_contribution": -0.0015945380503483504
+        },
+        "Elections": {
+          "w_bar": 0.0020590868397493286,
+          "w_r2": 0.006471243459777632,
+          "delta_w": 0.004412156620028303,
+          "delta_psi_c": -0.06603083368546327,
+          "psi_bar_c": 0.04131189390993771,
+          "within_contribution": -0.00013596322065941407,
+          "between_contribution": 0.00018227454620063863
+        },
+        "Entertainment": {
+          "w_bar": 0.09588182632050134,
+          "w_r2": 0.03197555591890124,
+          "delta_w": -0.0639062704016001,
+          "delta_psi_c": -0.025751926928859185,
+          "psi_bar_c": 0.010678725826909881,
+          "within_contribution": -0.0024691417852111177,
+          "between_contribution": -0.0006824375402390535
+        },
+        "Exotics": {
+          "w_bar": 0.0,
+          "w_r2": 0.009549746566383258,
+          "delta_w": 0.009549746566383258,
+          "delta_psi_c": 0.01361018341233204,
+          "psi_bar_c": 0.0136101834122653,
+          "within_contribution": 0.0,
+          "between_contribution": 0.0001299738023091269
+        },
+        "Financials": {
+          "w_bar": 0.3047448522829006,
+          "w_r2": 0.005888754905166775,
+          "delta_w": -0.29885609737773383,
+          "delta_psi_c": 0.14349934990812943,
+          "psi_bar_c": 0.019888680612385367,
+          "within_contribution": 0.04373068819044517,
+          "between_contribution": -0.005943853469809688
+        },
+        "Health": {
+          "w_bar": 0.00026857654431512983,
+          "w_r2": 9.197187704381949e-05,
+          "delta_w": -0.00017660466727131033,
+          "delta_psi_c": 0.2259176497188534,
+          "psi_bar_c": 0.02569728440495238,
+          "within_contribution": 6.067618166128561e-05,
+          "between_contribution": -4.538260362112847e-06
+        },
+        "Mentions": {
+          "w_bar": 0.0,
+          "w_r2": 0.06456425768476128,
+          "delta_w": 0.06456425768476128,
+          "delta_psi_c": 0.012830352488861349,
+          "psi_bar_c": 0.03313680297349832,
+          "within_contribution": 0.0,
+          "between_contribution": 0.002139453086030109
+        },
+        "Politics": {
+          "w_bar": 0.033303491495076096,
+          "w_r2": 0.010331507521255723,
+          "delta_w": -0.022971983973820373,
+          "delta_psi_c": 0.02423291059997768,
+          "psi_bar_c": 0.0268426938716508,
+          "within_contribution": 0.000807040532067296,
+          "between_contribution": -0.0006166299334337286
+        },
+        "Science and Technology": {
+          "w_bar": 0.006266786034019696,
+          "w_r2": 0.0026697392086330934,
+          "delta_w": -0.0035970468253866024,
+          "delta_psi_c": 0.06840982989565027,
+          "psi_bar_c": 0.03721174355757876,
+          "within_contribution": 0.00042870976657972417,
+          "between_contribution": -0.00013385238403088902
+        },
+        "Social": {
+          "w_bar": 0.0,
+          "w_r2": 0.00011496484630477437,
+          "delta_w": 0.00011496484630477437,
+          "delta_psi_c": 0.277541868721309,
+          "psi_bar_c": 0.27754186872129116,
+          "within_contribution": 0.0,
+          "between_contribution": 3.19075582806831e-05
+        },
+        "Sports": {
+          "w_bar": 8.952551477170994e-05,
+          "w_r2": 0.5875214601046436,
+          "delta_w": 0.5874319345898719,
+          "delta_psi_c": -0.06105916324862252,
+          "psi_bar_c": 0.07431116376854048,
+          "within_contribution": -5.466353021362804e-06,
+          "between_contribution": 0.043652750694178524
+        },
+        "Transportation": {
+          "w_bar": 0.0,
+          "w_r2": 3.065729234793983e-05,
+          "delta_w": 3.065729234793983e-05,
+          "delta_psi_c": 0.01021098087389278,
+          "psi_bar_c": 0.12063153542630684,
+          "within_contribution": 0.0,
+          "between_contribution": 3.698236247945149e-06
+        },
+        "World": {
+          "w_bar": 0.00017905102954341988,
+          "w_r2": 0.00035255886200130806,
+          "delta_w": 0.00017350783245788818,
+          "delta_psi_c": -0.13191394081277838,
+          "psi_bar_c": 0.05230231379930791,
+          "within_contribution": -2.3619326913657723e-05,
+          "between_contribution": 9.074861099850209e-06
+        }
+      }
+    },
+    "publication": {
+      "within": -0.031114579933574804,
+      "between": 0.02782224540669248,
+      "aggregate": -0.0032923345268823234,
+      "per_category": {
+        "Climate and Weather": {
+          "w_bar": 0.474395702775291,
+          "w_r2": 0.09953145438194899,
+          "delta_w": -0.374864248393342,
+          "delta_psi_c": 0.005354904093194964,
+          "psi_bar_c": 0.024059521290395375,
+          "within_contribution": 0.002540343490585507,
+          "between_contribution": -0.009019054365227671
+        },
+        "Commodities": {
+          "w_bar": 0.004565801253357207,
+          "w_r2": 0.010331507521255723,
+          "delta_w": 0.005765706267898516,
+          "delta_psi_c": 1.011695984880349,
+          "psi_bar_c": -0.07535315151931563,
+          "within_contribution": 0.004619202795783152,
+          "between_contribution": -0.00043446413802082466
+        },
+        "Companies": {
+          "w_bar": 0.0004476275738585497,
+          "w_r2": 0.00020693672334859384,
+          "delta_w": -0.00024069085050995584,
+          "delta_psi_c": -0.03984959255313436,
+          "psi_bar_c": 0.20509120745064735,
+          "within_contribution": -1.7837776433811263e-05,
+          "between_contribution": -4.93635771534101e-05
+        },
+        "Crypto": {
+          "w_bar": 0.008773500447627574,
+          "w_r2": 0.01006070143884892,
+          "delta_w": 0.0012872009912213468,
+          "delta_psi_c": -0.12227431351349453,
+          "psi_bar_c": 0.11796474832361557,
+          "within_contribution": -0.0010727737443439985,
+          "between_contribution": 0.00015184434097133468
+        },
+        "Economics": {
+          "w_bar": 0.06902417188898836,
+          "w_r2": 0.008630027795945062,
+          "delta_w": -0.060394144093043306,
+          "delta_psi_c": -0.03182649063483224,
+          "psi_bar_c": 0.0264021963436025,
+          "within_contribution": -0.002196797160201939,
+          "between_contribution": -0.0015945380503483504
+        },
+        "Elections": {
+          "w_bar": 0.0020590868397493286,
+          "w_r2": 0.006471243459777632,
+          "delta_w": 0.004412156620028303,
+          "delta_psi_c": 0.04691746222272134,
+          "psi_bar_c": 0.04131189390993771,
+          "within_contribution": 9.66071290172418e-05,
+          "between_contribution": 0.00018227454620063863
+        },
+        "Entertainment": {
+          "w_bar": 0.09588182632050134,
+          "w_r2": 0.03197555591890124,
+          "delta_w": -0.0639062704016001,
+          "delta_psi_c": 0.014484436365809253,
+          "psi_bar_c": 0.010678725826909881,
+          "within_contribution": 0.0013887942119768764,
+          "between_contribution": -0.0006824375402390535
+        },
+        "Exotics": {
+          "w_bar": 0.0,
+          "w_r2": 0.009549746566383258,
+          "delta_w": 0.009549746566383258,
+          "delta_psi_c": 0.013610183412332062,
+          "psi_bar_c": 0.0136101834122653,
+          "within_contribution": 0.0,
+          "between_contribution": 0.0001299738023091269
+        },
+        "Financials": {
+          "w_bar": 0.3047448522829006,
+          "w_r2": 0.005888754905166775,
+          "delta_w": -0.29885609737773383,
+          "delta_psi_c": -0.1180473435000013,
+          "psi_bar_c": 0.019888680612385367,
+          "within_contribution": -0.03597432025729672,
+          "between_contribution": -0.005943853469809688
+        },
+        "Health": {
+          "w_bar": 0.00026857654431512983,
+          "w_r2": 9.197187704381949e-05,
+          "delta_w": -0.00017660466727131033,
+          "delta_psi_c": -0.22289857652941517,
+          "psi_bar_c": 0.02569728440495238,
+          "within_contribution": -5.986532941703183e-05,
+          "between_contribution": -4.538260362112847e-06
+        },
+        "Mentions": {
+          "w_bar": 0.0,
+          "w_r2": 0.06456425768476128,
+          "delta_w": 0.06456425768476128,
+          "delta_psi_c": -0.026252677305829066,
+          "psi_bar_c": 0.03313680297349832,
+          "within_contribution": -0.0,
+          "between_contribution": 0.002139453086030109
+        },
+        "Politics": {
+          "w_bar": 0.033303491495076096,
+          "w_r2": 0.010331507521255723,
+          "delta_w": -0.022971983973820373,
+          "delta_psi_c": -0.007113929052025231,
+          "psi_bar_c": 0.0268426938716508,
+          "within_contribution": -0.00023691867568069705,
+          "between_contribution": -0.0006166299334337286
+        },
+        "Science and Technology": {
+          "w_bar": 0.006266786034019696,
+          "w_r2": 0.0026697392086330934,
+          "delta_w": -0.0035970468253866024,
+          "delta_psi_c": -0.03591181893141717,
+          "psi_bar_c": 0.03721174355757876,
+          "within_contribution": -0.00022505168533564924,
+          "between_contribution": -0.00013385238403088902
+        },
+        "Social": {
+          "w_bar": 0.0,
+          "w_r2": 0.00011496484630477437,
+          "delta_w": 0.00011496484630477437,
+          "delta_psi_c": -0.5449065338780811,
+          "psi_bar_c": 0.27754186872129116,
+          "within_contribution": -0.0,
+          "between_contribution": 3.19075582806831e-05
+        },
+        "Sports": {
+          "w_bar": 8.952551477170994e-05,
+          "w_r2": 0.5875214601046436,
+          "delta_w": 0.5874319345898719,
+          "delta_psi_c": -0.011446267968154672,
+          "psi_bar_c": 0.07431116376854048,
+          "within_contribution": -1.0247330320639814e-06,
+          "between_contribution": 0.043652750694178524
+        },
+        "Transportation": {
+          "w_bar": 0.0,
+          "w_r2": 3.065729234793983e-05,
+          "delta_w": 3.065729234793983e-05,
+          "delta_psi_c": 0.0,
+          "psi_bar_c": 0.12063153542630684,
+          "within_contribution": 0.0,
+          "between_contribution": 3.698236247945149e-06
+        },
+        "World": {
+          "w_bar": 0.00017905102954341988,
+          "w_r2": 0.00035255886200130806,
+          "delta_w": 0.00017350783245788818,
+          "delta_psi_c": 0.13997015749220165,
+          "psi_bar_c": 0.05230231379930791,
+          "within_contribution": 2.506180080433333e-05,
+          "between_contribution": 9.074861099850209e-06
+        }
+      }
+    }
+  },
+  "horizon_robustness": {
+    "by_bucket": [
+      {
+        "lookback_day": 0,
+        "n": 424646,
+        "delta_bar_fee": 0.011717204269884726,
+        "delta_bar_pub": -0.01531959677985428,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 1,
+        "n": 277892,
+        "delta_bar_fee": 0.09783710710705322,
+        "delta_bar_pub": -0.026375026855076044,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 2,
+        "n": 149290,
+        "delta_bar_fee": 0.005643444384484086,
+        "delta_bar_pub": 0.01283002837529952,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 3,
+        "n": 108011,
+        "delta_bar_fee": 0.015335022455514193,
+        "delta_bar_pub": 0.01581773122291225,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 4,
+        "n": 85482,
+        "delta_bar_fee": 0.01253071806397323,
+        "delta_bar_pub": 0.01702974676010678,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 5,
+        "n": 71644,
+        "delta_bar_fee": 0.0534467565733607,
+        "delta_bar_pub": -0.031569902212926285,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 6,
+        "n": 57839,
+        "delta_bar_fee": 0.03786161777855898,
+        "delta_bar_pub": -0.01788619884990181,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 7,
+        "n": 44194,
+        "delta_bar_fee": 0.0018488022429566531,
+        "delta_bar_pub": -0.018676537380822075,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 8,
+        "n": 39315,
+        "delta_bar_fee": 0.011482293223814973,
+        "delta_bar_pub": -0.011882309807163951,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 9,
+        "n": 36968,
+        "delta_bar_fee": -0.0076903974827950495,
+        "delta_bar_pub": -0.005742305034508162,
+        "n_categories_fit": 17
+      },
+      {
+        "lookback_day": 10,
+        "n": 35164,
+        "delta_bar_fee": 0.022642362340324136,
+        "delta_bar_pub": -0.014715761200457499,
+        "n_categories_fit": 17
+      }
+    ],
+    "close_only": {
+      "lookback_day": 0,
+      "n": 424646,
+      "delta_bar_fee": 0.011717204269884726,
+      "delta_bar_pub": -0.01531959677985428,
+      "n_categories_fit": 17
+    }
+  },
+  "maker_fee_did": {
+    "primary_for": "fee boundary (analysis_plan.md Addendum 3)",
+    "twfe": {
+      "delta_did": 0.011283340504144217,
+      "delta_did_se": 0.012866766533174707,
+      "delta_did_ci_lo": -0.01393552190087821,
+      "delta_did_ci_hi": 0.03650220290916664,
+      "alpha_did": 0.9835008903434702,
+      "psi_untreated": -0.0672315338802884,
+      "delta_ever": -0.013002991975651187,
+      "n": 1330445,
+      "n_clusters": 119646,
+      "n_treated_obs": 141708,
+      "n_control_obs": 1188737,
+      "n_treated_series": 98,
+      "months": 60,
+      "used_wild_bootstrap": false,
+      "clean_controls": false
+    },
+    "clean_controls": {
+      "delta_did": -0.00158414738315593,
+      "delta_did_se": 0.006375569573098268,
+      "delta_did_ci_lo": -0.014080263746428534,
+      "delta_did_ci_hi": 0.010911968980116675,
+      "alpha_did": 1.008197371382112,
+      "psi_untreated": -0.05017367923060765,
+      "delta_ever": NaN,
+      "n": 1304697,
+      "n_clusters": 118484,
+      "n_treated_obs": 141708,
+      "n_control_obs": 1162989,
+      "n_treated_series": 98,
+      "months": 60,
+      "used_wild_bootstrap": false,
+      "clean_controls": true
+    },
+    "note": "delta_did is the differential change in the MZ slope while a series carries a maker fee, net of the common calendar path. None means the design is not identified on this sample (no treated rows, no controls, or a single month) -- never a null result."
+  }
+}
