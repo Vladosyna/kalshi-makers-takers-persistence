@@ -54,12 +54,19 @@ DUCKDB_MEMORY_LIMIT_GB = 6
 # so the parquet scan's ticker filter stays selective; chunking by ref would
 # smear one market across batches and re-read the tape for each.
 #
-# 5,000 rather than 20,000: at 20k the batch still blew the budget ("failed to
-# pin block of size 256.0 KiB (5.5 GiB/5.5 GiB used)", 2026-08-04). A batch
-# holds roughly batch_size x mean-fills-per-market rows before the dedup --
-# ~600 fills/market measured, so 5k markets is ~3M rows, comfortably inside the
-# limit. The cost is more passes over the tape, which is I/O the machine has.
-ASOF_TICKER_BATCH = 5_000
+# 2,500, and the number is a measurement rather than a preference. The old
+# 5,000 was sized on "~600 fills/market measured", which the finished R2
+# universe demolishes: KXNBAGAME averages 15,243 fills per market and KXWCGAME
+# 91,396. A contiguous 5,000-ticker batch from KXNBAGAME onward pulls 37.8M
+# fills, not the ~3M that sizing assumed, and on 2026-08-25 it failed exactly
+# there -- "failed to pin block of size 256.0 KiB (5.5 GiB/5.5 GiB used)".
+#
+# Measured on that same batch: 5,000 at 6GB with insertion order preserved
+# FAILS; 5,000 at 8GB with it off takes 125s; 1,500 takes 29s. Halving to
+# 2,500 keeps roughly a 2x headroom over the worst real batch at a cost of
+# more scans, which is I/O the machine has and a failure three hours into
+# `kmt r2` is not.
+ASOF_TICKER_BATCH = 2_500
 
 # Rows per streamed batch out of iter_fills. Bounds peak memory for every
 # whole-tape consumer; 250k rows of the 11-column trade row is tens of MB.
@@ -454,7 +461,7 @@ class TradeStore:
         self, refs: list[tuple[str, int, int]],
     ) -> dict[tuple[str, int], tuple[float, int, float, str]]:
         """One ASOF-join batch. See last_trade_at_or_before for the contract."""
-        con = _duckdb_connect()
+        con = self._aggregate_connection()
         con.execute("CREATE TEMP TABLE refs(ticker VARCHAR, key BIGINT, ref_epoch BIGINT)")
         con.executemany("INSERT INTO refs VALUES (?, ?, ?)", refs)
         # created_time is an ISO-8601 string in the tape; epoch() on a cast
