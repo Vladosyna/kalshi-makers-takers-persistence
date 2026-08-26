@@ -8,8 +8,12 @@ actual sourced rate.
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from typing import Callable
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,7 +45,21 @@ def compute_ribbon(margin_fn: Callable[[float], float], rates: list[float]) -> R
     if not rates:
         return RibbonResult(rates=[], margins=[], break_even_rate=None, sign_flips=False, fragile=False)
 
-    margins = [margin_fn(r) for r in rates]
+    # Log every evaluation. margin_fn re-reads the whole in-scope tape, and on
+    # the real R2 universe that is ~134M fills per call against an 11-point
+    # grid: the escalate run of 2026-08-26 spent NINETEEN HOURS in here with no
+    # output at all, and working out how far along it was took a morning of
+    # inference from spill-directory names and CPU counters. Two lines of
+    # progress would have answered it immediately. Cheap at one line per call,
+    # which is once every tens of minutes.
+    margins = []
+    for i, r in enumerate(rates, 1):
+        t0 = time.monotonic()
+        margins.append(margin_fn(r))
+        log.info(
+            "fee-sensitivity ribbon: rate %d/%d (%.6f) -> margin %s in %.0fs",
+            i, len(rates), r, f"{margins[-1]:.6f}", time.monotonic() - t0,
+        )
     signs = {m > 0 for m in margins}
     sign_flips = len(signs) > 1
 
