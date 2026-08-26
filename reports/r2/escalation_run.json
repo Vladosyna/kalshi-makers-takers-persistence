@@ -1,0 +1,78 @@
+{
+  "maker_margin": {
+    "layer_a": 0.024007610603563222,
+    "layer_b": 0.0438529409947863,
+    "layer_c": 0.045444270693186274,
+    "n_maker_a": 202725609,
+    "n_taker_a": 167925545,
+    "n_maker_b": 202725609,
+    "n_taker_b": 167925545,
+    "n_maker_c": 202725609,
+    "n_taker_c": 167925545,
+    "gap_excluded_b": 0,
+    "gap_excluded_c": 0
+  },
+  "ribbon": {
+    "rates": [
+      0.0,
+      0.00875,
+      0.01069444,
+      0.01263889,
+      0.01458333,
+      0.01652778,
+      0.01847222,
+      0.02041667,
+      0.02236111,
+      0.02430556,
+      0.02625
+    ],
+    "margins": [
+      0.045444270693186274,
+      0.0444531588827168,
+      0.04430182850950526,
+      0.04415649893732794,
+      0.04400567257566645,
+      0.043850965402175444,
+      0.043700994307437215,
+      0.043531175085752535,
+      0.043375799081597,
+      0.04322352165276556,
+      0.04307564169372458
+    ],
+    "break_even_rate": null,
+    "sign_flips": false,
+    "fragile": false
+  },
+  "escalation": {
+    "escalate": true,
+    "triggers": [
+      "delta_bar_fee_significant"
+    ],
+    "detail": {
+      "delta_bar_fee": {
+        "available": true,
+        "delta_bar": 0.03987348396387958,
+        "ci_lo": 0.007108425437346813,
+        "ci_hi": 0.07263854249041235,
+        "rejects_zero": true
+      },
+      "delta_bar_pub": {
+        "available": true,
+        "delta_bar": -0.031114579933574804,
+        "ci_lo": -0.06367580657941482,
+        "ci_hi": 0.001446646712265208,
+        "rejects_zero": false
+      },
+      "maker_margin_sign_flip": {
+        "margins_available": true,
+        "layer_a": 0.024007610603563222,
+        "layer_c": 0.045444270693186274,
+        "sign_flip": false,
+        "ribbon_available": true,
+        "ribbon_fragile": false,
+        "survives_ribbon": true,
+        "condition_met": false
+      }
+    }
+  }
+}
