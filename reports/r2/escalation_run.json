@@ -44,17 +44,37 @@
     "fragile": false
   },
   "escalation": {
-    "escalate": true,
-    "triggers": [
-      "delta_bar_fee_significant"
-    ],
+    "escalate": false,
+    "triggers": [],
     "detail": {
       "delta_bar_fee": {
         "available": true,
         "delta_bar": 0.03987348396387958,
         "ci_lo": 0.007108425437346813,
         "ci_hi": 0.07263854249041235,
-        "rejects_zero": true
+        "rejects_zero": true,
+        "triggers_escalation": false,
+        "superseded_by": "did_fee (Addendum 3)"
+      },
+      "did_fee": {
+        "rule": "Addendum 3: rejection at 5% required in BOTH fits",
+        "fits": {
+          "twfe": {
+            "identified": true,
+            "delta_did": 0.011283340504144217,
+            "ci_lo": -0.01393552190087821,
+            "ci_hi": 0.03650220290916664,
+            "rejects_zero": false
+          },
+          "clean_controls": {
+            "identified": true,
+            "delta_did": -0.00158414738315593,
+            "ci_lo": -0.014080263746428534,
+            "ci_hi": 0.010911968980116675,
+            "rejects_zero": false
+          }
+        },
+        "condition_met": false
       },
       "delta_bar_pub": {
         "available": true,

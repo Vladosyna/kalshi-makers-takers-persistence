@@ -2,6 +2,10 @@
 
 ### Evidence from Kalshi, 2021–2026
 
+**Vladyslav Yurchyna**
+Independent Researcher
+vlad.yurchina@outlook.com
+
 **Draft — 2026-08-27.** Target: *International Journal of Forecasting*.
 Companion replication (in preparation for a replication outlet once the
 original is published): `paper_b_replication.md`.
@@ -134,7 +138,7 @@ maker/taker quantities need every fill's price, size and taker side.
 
 The completed tape is **376,760,957 fills across 62 monthly partitions**. The
 in-scope set for the post-boundary window — markets clearing $1,000 volume, 24
-hours open, and a closing bid–ask spread at or under 20c — is **392,597
+hours open, and a closing bid–ask spread at or under 20c — is **391,427
 markets**, all of them taped.
 
 Three construction choices are stated because each silently changes the sample,
@@ -674,6 +678,16 @@ The fee history, the category mapping, the archived source documents and the
 complete pipeline are public.
 
 ---
+
+### Declaration of interest
+
+**[AWAITING AUTHOR CONFIRMATION — do not submit until this line is settled.]**
+The intended statement is that the author has no competing financial interest in
+Kalshi or any other prediction market, holds no positions on the venue studied,
+and received no funding for this work. This paper analyses a trading venue, so
+whether the author trades on it is exactly the disclosure a reader is entitled
+to; it is left as an explicit checkpoint rather than asserted on the author's
+behalf.
 
 ### Data and code availability
 

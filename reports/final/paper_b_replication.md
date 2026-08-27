@@ -1,5 +1,10 @@
 # A Replication of Bürgi, Deng and Whelan, *Makers and Takers: The Economics of the Kalshi Prediction Market*
 
+**Vladyslav Yurchyna**
+Independent Researcher
+vlad.yurchina@outlook.com
+
+
 **Draft — 2026-08-27.** Target: a replication outlet (e.g. *Journal of Comments
 and Replications in Economics*), **held until the original is published** — JCRE
 requires the replicated study to have appeared. As of this draft the original
@@ -296,6 +301,16 @@ denomination and the no-trade lookback rule explicitly; both are one sentence,
 and both are load-bearing.
 
 ---
+
+### Declaration of interest
+
+**[AWAITING AUTHOR CONFIRMATION — do not submit until this line is settled.]**
+The intended statement is that the author has no competing financial interest in
+Kalshi or any other prediction market, holds no positions on the venue studied,
+and received no funding for this work. This paper analyses a trading venue, so
+whether the author trades on it is exactly the disclosure a reader is entitled
+to; it is left as an explicit checkpoint rather than asserted on the author's
+behalf.
 
 ### Data and code availability
 

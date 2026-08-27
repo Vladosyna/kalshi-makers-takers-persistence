@@ -896,6 +896,24 @@ def _compute_escalation(config: dict) -> dict:
         maker_margin_layer_a=maker_margin.layer_a, maker_margin_layer_c=maker_margin.layer_c,
         ribbon=ribbon, did_fee_fits=did_fee_fits,
     )
+
+    # Persist the determination alongside its inputs, every run including cache
+    # hits. Without this the escalation block in the artifact is whatever the
+    # run that first created the file decided, and it never updates again --
+    # which is exactly what happened when Addendum 3 changed the fee arm: the
+    # code returned "no escalation" while the committed artifact still read
+    # escalate=true on the superseded delta_bar_fee trigger. The determination
+    # is cheap and pure, so rewriting it costs nothing and cannot go stale.
+    cache_path.write_text(
+        json.dumps(
+            {"maker_margin": asdict(maker_margin),
+             "ribbon": asdict(ribbon) if ribbon else None,
+             "escalation": asdict(escalation)},
+            indent=2, default=str,
+        ) + "\n",
+        encoding="utf-8",
+    )
+
     return {
         "r2_report": r2_report, "maker_margin": maker_margin, "ribbon": ribbon, "escalation": escalation,
     }
