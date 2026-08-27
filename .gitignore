@@ -25,6 +25,9 @@ data/logs/*
 # (data/autostart_fetch.state.json, holding the last launch time for the
 # crash-loop brake) is runtime state and stays ignored.
 !data/autostart_fetch.json
+# data/pooled_panel.parquet stays ignored: it is a 16MB derived cache of the
+# two-hour ASOF build, regenerable by tools/run_event_study.py --rebuild, and
+# large binary derivatives do not belong in the history.
 reports/*
 !reports/.gitkeep
 !reports/step_zero/

@@ -273,3 +273,208 @@ def run_did_pair(
         "clean_controls": fit_did(panel, fee_schedule, clean_controls=True,
                                   n_wild_bootstrap=n_wild_bootstrap, seed=seed),
     }
+
+
+# ---------------------------------------------------------------------------
+# Event study: the identifying assumption, made testable
+# ---------------------------------------------------------------------------
+
+# Event-time window in months around each series' OWN first treatment month.
+# Endpoints are binned rather than dropped, so a market seen nine months after
+# treatment still contributes instead of silently leaving the sample and
+# changing the composition of the very comparison being made.
+EVENT_LEADS = 6
+EVENT_LAGS = 9
+# k = -1 is the omitted reference. Every coefficient is therefore read as a
+# difference from the month immediately before treatment.
+EVENT_REFERENCE = -1
+
+
+@dataclass
+class EventStudyResult:
+    """Per-event-time slope shifts, plus the joint pre-trend test.
+
+    `coefficients` maps event time k (months from a series' own first treatment
+    month, endpoints binned) to the interaction delta_k on (D_k * P): the
+    differential favorite-longshot slope at that distance from treatment,
+    relative to k = -1.
+
+    PRE-PERIOD COEFFICIENTS ARE THE POINT. delta_did assumes treated and
+    untreated series would have moved in parallel absent the fee, and that
+    assumption is not testable directly -- but its observable implication is:
+    if the slopes were already diverging before Kalshi charged anybody, the
+    pre-period deltas will say so. `pretrend_p` is a joint Wald test that all
+    of them are zero.
+    """
+
+    coefficients: dict[int, float]
+    std_errors: dict[int, float]
+    ci_lo: dict[int, float]
+    ci_hi: dict[int, float]
+    pretrend_chi2: float
+    pretrend_df: int
+    pretrend_p: float
+    # Post-treatment joint test. Reading significance off individual event-time
+    # coefficients invites a multiple-comparisons error: ten post-period tests
+    # at 5% produce a "significant" month about forty percent of the time under
+    # the null. The joint test is what decides whether there is dynamics at all.
+    posttrend_chi2: float
+    posttrend_df: int
+    posttrend_p: float
+    reference: int
+    n: int
+    n_clusters: int
+    n_treated_series: int
+    n_cohorts: int
+    clean_controls: bool
+
+
+def _ordinal_month(close_epoch: np.ndarray) -> np.ndarray:
+    """Months since year 0, so event time is plain subtraction. YYYYMM labels
+    cannot be subtracted -- 202601 minus 202512 is 89, not 1."""
+    return np.array([
+        (lambda d: d.year * 12 + (d.month - 1))(
+            datetime.fromtimestamp(int(e), tz=timezone.utc)
+        )
+        for e in close_epoch
+    ])
+
+
+def fit_event_study(
+    panel: pl.DataFrame,
+    fee_schedule: dict[str, Any],
+    *,
+    clean_controls: bool = True,
+    leads: int = EVENT_LEADS,
+    lags: int = EVENT_LAGS,
+) -> EventStudyResult | None:
+    """Leads-and-lags version of fit_did, for the parallel-trends check.
+
+    Defaults to clean_controls=True: the pre-trend evidence is only worth
+    having on the sample the headline estimate is reported from, and that is
+    the treated-vs-never-treated one.
+
+    Returns None when the design is not identified -- no treated rows, a single
+    cohort with no never-treated controls, or a rank-deficient design. As
+    everywhere else here, that is reported as "not identified" and never as a
+    null.
+    """
+    if panel.is_empty() or "series_ticker" not in panel.columns:
+        return None
+
+    now, ever = treated_flags(panel, fee_schedule)
+    if now.sum() == 0:
+        return None
+
+    # NO clean-controls FILTER HERE, and the difference from fit_did is the
+    # entire point. fit_did drops not-yet-treated rows of treated series, which
+    # is defensible for a static treated-vs-never-treated contrast. Those rows
+    # ARE the pre-period. Dropping them leaves an event study with no leads at
+    # all -- which is exactly what the first run of this function produced, and
+    # what the synthetic test caught: post-treatment effects recovered
+    # correctly, every pre-period coefficient missing.
+    #
+    # The comparison group is instead the never-treated series, which anchor
+    # the common calendar path while each treated cohort's own dynamics are
+    # absorbed by its event-time dummies. `clean_controls` is kept in the
+    # signature so callers can label which sample a result belongs to, but it
+    # cannot mean here what it means there.
+    y = panel["y"].to_numpy()
+    p = panel["p"].to_numpy()
+    y_minus_p_cents = (y - p) * 100.0
+    p_cents = p * 100.0
+    if np.ptp(p_cents) == 0:
+        return None
+
+    om = _ordinal_month(panel["close_time_epoch"].to_numpy())
+    series = np.array([s if s is not None else "" for s in panel["series_ticker"].to_list()])
+
+    # Each series' OWN first treated month -- the cohort date. A series never
+    # observed treated has none, and stays a pure control contributing only to
+    # the common calendar path.
+    first_treated: dict[str, int] = {}
+    for s, m, t in zip(series, om, now):
+        if t and (s not in first_treated or m < first_treated[s]):
+            first_treated[s] = m
+    if not first_treated:
+        return None
+
+    # Event time, with never-treated rows parked outside the window entirely.
+    NEVER = np.iinfo(np.int64).min
+    k = np.array([
+        (m - first_treated[s]) if s in first_treated else NEVER
+        for s, m in zip(series, om)
+    ])
+    k_binned = np.where(k == NEVER, NEVER, np.clip(k, -leads, lags))
+
+    months = _month_index(panel["close_time_epoch"].to_numpy())
+    unique_months = np.unique(months)
+    if len(unique_months) < 2:
+        return None
+
+    month_cols = []
+    for m in unique_months[1:]:
+        d = (months == m).astype(float)
+        month_cols += [d, d * p_cents]
+
+    event_ks = [j for j in range(-leads, lags + 1) if j != EVENT_REFERENCE]
+    event_cols, kept_ks = [], []
+    for j in event_ks:
+        d = (k_binned == j).astype(float)
+        if d.sum() == 0:
+            continue  # no rows at this distance; report it missing, not zero
+        event_cols += [d, d * p_cents]
+        kept_ks.append(j)
+    if not kept_ks:
+        return None
+
+    # `ever` stays in regardless: with treated pre-periods retained it is no
+    # longer collinear with `now`, and it is what absorbs the PERMANENT level
+    # and slope difference between series Kalshi chose to charge and series it
+    # did not. That difference is real and expected -- see the selection
+    # discussion in the paper -- and leaving it in the residual would load it
+    # onto the event-time coefficients.
+    base_cols = [np.ones_like(p_cents), p_cents, ever, ever * p_cents]
+    x = np.column_stack([*base_cols, *event_cols, *month_cols])
+
+    clusters = _cluster_ids(panel)
+    n_clusters = len(np.unique(clusters))
+    if n_clusters < 2 or len(panel) <= x.shape[1]:
+        return None
+    if np.linalg.matrix_rank(x) < x.shape[1]:
+        return None
+
+    fit = sm.OLS(y_minus_p_cents, x).fit(cov_type="cluster", cov_kwds={"groups": clusters})
+
+    # Interaction columns sit at base + 2*i + 1 (level first, then slope).
+    base = len(base_cols)
+    slope_idx = {j: base + 2 * i + 1 for i, j in enumerate(kept_ks)}
+    coefs = {j: float(fit.params[idx]) for j, idx in slope_idx.items()}
+    ses = {j: float(fit.bse[idx]) for j, idx in slope_idx.items()}
+    lo = {j: coefs[j] - 1.96 * ses[j] for j in kept_ks}
+    hi = {j: coefs[j] + 1.96 * ses[j] for j in kept_ks}
+
+    # Joint Wald test on every PRE-treatment interaction. Eyeballing a plot is
+    # not a test, and a referee will ask for this number specifically.
+    def _joint(ks: list[int]) -> tuple[float, int, float]:
+        if not ks:
+            return float("nan"), 0, float("nan")
+        r = np.zeros((len(ks), x.shape[1]))
+        for row, j in enumerate(ks):
+            r[row, slope_idx[j]] = 1.0
+        w = fit.wald_test(r, use_f=False, scalar=True)
+        return float(w.statistic), len(ks), float(w.pvalue)
+
+    chi2, df, pval = _joint([j for j in kept_ks if j < EVENT_REFERENCE])
+    post_chi2, post_df, post_p = _joint([j for j in kept_ks if j > EVENT_REFERENCE])
+
+    return EventStudyResult(
+        coefficients=coefs, std_errors=ses, ci_lo=lo, ci_hi=hi,
+        pretrend_chi2=chi2, pretrend_df=df, pretrend_p=pval,
+        posttrend_chi2=post_chi2, posttrend_df=post_df, posttrend_p=post_p,
+        reference=EVENT_REFERENCE,
+        n=len(panel), n_clusters=n_clusters,
+        n_treated_series=len(first_treated),
+        n_cohorts=len(set(first_treated.values())),
+        clean_controls=clean_controls,
+    )

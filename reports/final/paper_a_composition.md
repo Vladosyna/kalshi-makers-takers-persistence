@@ -34,10 +34,20 @@ it is **not the exchange-wide regime change the literature assumes**: a
 per-series surcharge covering 8.0% to 14.4% of in-scope markets, revised five
 times, flat per contract before it was quadratic in price. That rules out a step
 dummy and calls for a difference-in-differences between treated and untreated
-series trading in the same months. It returns **−0.0016 with a standard error
-of 0.0064** on 98 treated series and 119,646 event clusters: the maker fee did
-not detectably change the bias. The maker's return advantage at prices at or
-above 50c survives every fee layer and every plausible fee rate.
+series trading in the same months.
+
+Its static estimate is a tight null — **−0.0016 (0.0064)** on 98 treated series
+and 119,646 event clusters — but an event study around each series' own adoption
+date shows that null is an average concealing a shape. Pre-treatment
+coefficients are jointly indistinguishable from zero (χ²(5) = 3.24, p = 0.66),
+supporting parallel trends in a setting where treatment was visibly selected on
+market-making activity. Post-treatment coefficients are jointly **not** zero
+(χ²(10) = 21.01, p = 0.021): the bias falls in treated series three to four
+months after they are charged, then decays back. So the fee moved the bias
+transitorily rather than not at all, and the static average is the second
+aggregate in this paper to hide the structure inside it. The maker's return
+advantage at prices at or above 50c survives every fee layer and every plausible
+fee rate.
 
 We publish the fee history, the category mapping and the full pipeline.
 
@@ -91,12 +101,18 @@ further carve-outs — a 0.14 taker rate before August 2021, and a half rate for
 index markets covering 18.3% of the pre-2025 universe — are not modelled in the
 existing literature at all.
 
-**Properly identified, the fee did not move the bias.** Because treatment is
-per-series, staggered and revised, treated and untreated series trade in the
-same months and a difference-in-differences is available. It returns −0.0016
-(s.e. 0.0064) under the specification that compares treated observations only
-against never-treated series. The naive step-dummy coefficient disagrees, and
-Section 6 shows why: it is dominated by one category that has shrunk by a factor
+**Properly identified, the fee moved the bias transitorily and not
+permanently.** Because treatment is per-series, staggered and revised, treated
+and untreated series trade in the same months and a difference-in-differences is
+available. Its static estimate is −0.0016 (s.e. 0.0064) against never-treated
+series. But treatment here was selected on market-making activity, which is
+adjacent to the outcome, so the identifying assumption needs evidence rather
+than assertion — and the event study that provides it also revises the reading.
+Pre-treatment coefficients are jointly zero (p = 0.66); post-treatment ones are
+jointly not (p = 0.021), with the bias falling three to four months after a
+series is charged and decaying back afterwards. The static null is an average
+over that hump. The naive step-dummy coefficient disagrees with both, for a
+third reason again: it is dominated by one category that has shrunk by a factor
 of fifty while retaining nearly a third of the composition-held-fixed weight.
 
 **The exploitable margin survives.** The maker's return advantage at prices at
@@ -234,6 +250,44 @@ noting: a naive reading of the aggregate would report that the bias *strengthene
 after a fee designed to tax it — a conclusion with no plausible mechanism behind
 it, arrived at by not asking what the sample was made of.
 
+### 4.4 What is and is not new here
+
+The general principle is old. That an aggregate can move in the opposite
+direction to every subgroup composing it is Simpson (1951); separating a
+between-group weight change from a within-group behavioural change is the
+Oaxaca (1973) and Blinder (1973) decomposition, and the shift-share logic that
+underlies Bartik (1991) instruments. We claim no novelty for the arithmetic in
+§4.2 and we use the standard form deliberately, so that the object being
+reported is familiar.
+
+What is specific to this setting is worth stating plainly, because the obvious
+referee response to §4.2 is that it restates a textbook fact.
+
+**The magnitude is not a textbook magnitude.** Shift-share decompositions were
+developed for panels whose composition drifts over decades. A single category
+going from 0.009% to 58.8% of the sample in fourteen months is not drift; it is
+the venue becoming a different venue. The resulting distortion is large enough
+to invert the economic reading rather than merely attenuate it: the naive
+aggregate says a fee levied on liquidity providers made the market *less*
+efficiently priced, which is not a mechanism anyone would defend if it were
+stated aloud.
+
+**The trap is live, not hypothetical.** Kalshi is being analysed now, and the
+samples in circulation straddle exactly this boundary — Becker (2026) covers
+June 2021 to November 2025, which contains the sports launch in the middle. We
+are not warning about a possible future error.
+
+**And it is a property of young markets specifically.** A mature exchange adds
+listings within existing asset classes; a new one adds asset classes. Prediction
+markets are currently doing the latter — Kalshi added sports in 2025, and
+Polymarket's own composition has moved comparably — so any study of this
+literature's growth period inherits the problem rather than encountering it
+occasionally.
+
+The contribution is therefore the measurement and its consequence in a setting
+where several groups are actively estimating the affected quantity, not the
+decomposition identity.
+
 The remedy we adopt is to fix the mix at the last full pre-sports year and to
 report the two terms separately, with every behavioural claim referring to the
 within term only. Sports is then reported as its own stratum rather than being
@@ -308,12 +362,117 @@ require a wild cluster bootstrap.
 
 Because two-way fixed effects under staggered adoption permits already-treated
 units to serve as controls for later-treated ones, with the attendant negative
-weighting, both fits are reported always; the clean-controls variant restricts
-comparisons to never-treated series and is the one reported on disagreement.
+weighting (Goodman-Bacon 2021), both fits are reported always; the
+clean-controls variant restricts comparisons to never-treated series — the
+correction Callaway and Sant'Anna (2021) and Sun and Abraham (2021) formalise —
+and is the one reported on disagreement.
 
-**The maker fee did not detectably change the slope.**
+**Read on its own, this says the maker fee did not change the average slope.
+§6.3 shows that reading is incomplete.**
 
-### 6.2 The naive coefficient, and why it disagrees
+### 6.2 The identifying assumption, and why selection sharpens it
+
+δ_did is unbiased only under **parallel trends**: absent the fee, treated and
+untreated series would have moved together in slope. This is an assumption, not
+a result, and it deserves more scrutiny here than it usually gets, because
+assignment to treatment was plainly not random.
+
+Kalshi charged an enumerated list of series. Section 5 shows which: 8.0% to
+14.4% of in-scope markets carrying 61% to 66% of volume — that is, the series
+where market-making is most active and most profitable. Maker profitability is
+not incidental to what we are measuring. It is economically linked to the very
+slope the estimand concerns: §6.6 reports the maker's return advantage as a
+headline quantity, and an exchange choosing to tax the series where that
+advantage is largest is selecting on something adjacent to the outcome.
+
+The `Ever` terms absorb **permanent** differences in level and slope between the
+charged and uncharged groups, and those differences are certainly present. They
+do not absorb a **differential trend**. Selection of this kind therefore raises
+the bar that parallel trends must clear rather than lowering it, and asserting
+the assumption without evidence would be the weakest point in the paper.
+
+### 6.3 Event study: pre-trends, and a dynamic effect the average hides
+
+We re-estimate with leads and lags measured in months from **each series' own
+first treatment month**, never-treated series anchoring the calendar path, k=−1
+omitted as the reference and endpoints binned. The sample is the same 1,330,445
+observations and 119,646 clusters; 98 treated series fall into 11 adoption
+cohorts.
+
+| Event time k | δ_k | s.e. | 95% CI |
+|---|---|---|---|
+| −6 | −0.0428 | 0.0285 | [−0.0988, +0.0131] |
+| −5 | −0.0187 | 0.0624 | [−0.1410, +0.1037] |
+| −4 | −0.0975 | 0.0875 | [−0.2690, +0.0740] |
+| −3 | +0.0016 | 0.0633 | [−0.1225, +0.1257] |
+| −2 | −0.0235 | 0.0410 | [−0.1039, +0.0569] |
+| **−1** | — | — | *reference* |
+| 0 | −0.0092 | 0.0258 | [−0.0598, +0.0414] |
+| +1 | +0.0179 | 0.0278 | [−0.0365, +0.0724] |
+| +2 | −0.0120 | 0.0291 | [−0.0691, +0.0451] |
+| **+3** | **−0.0771** | 0.0342 | **[−0.1441, −0.0102]** |
+| **+4** | **−0.0826** | 0.0342 | **[−0.1496, −0.0157]** |
+| +5 | −0.0462 | 0.0369 | [−0.1185, +0.0261] |
+| +6 | −0.0210 | 0.0257 | [−0.0713, +0.0293] |
+| +7 | −0.0552 | 0.0346 | [−0.1230, +0.0127] |
+| +8 | −0.0242 | 0.0257 | [−0.0746, +0.0261] |
+| +9 | −0.0037 | 0.0244 | [−0.0515, +0.0441] |
+
+**Parallel trends is supported.** Every pre-treatment interval covers zero, and
+the joint Wald test that all five are zero gives **χ²(5) = 3.24, p = 0.66**.
+Slopes were not already diverging before Kalshi charged anybody. Given the
+selection argument above, this is the evidence the design needed rather than a
+formality.
+
+**But the static null is an average over dynamics that are not zero.** The joint
+test that all ten post-treatment coefficients are zero gives **χ²(10) = 21.01,
+p = 0.021**, rejecting at 5%. We report the joint test rather than the two
+starred rows, because ten coefficients tested individually at 5% would produce
+at least one "significant" month roughly forty percent of the time under the
+null; the joint statistic is what establishes there is something to explain.
+
+The shape is coherent: nothing at impact, a **negative** deviation peaking at
+three and four months after a series is charged — the favorite–longshot slope
+*falling* in treated series relative to controls — and decay back toward zero by
+nine months. So the fee did move the bias, transitorily and with a lag, in the
+direction of less bias.
+
+We flag two things we cannot settle. The delayed onset is not obviously
+explicable by a fee that takes effect immediately, and we do not have a
+mechanism we would defend; candidate explanations include contracts written
+before treatment settling after it, and adjustment in maker behaviour rather
+than in posted prices. And the point estimates at k=+3 and +4 are large relative
+to the baseline slope of 0.0254 — they imply a temporary sign reversal — with
+correspondingly wide intervals. We report the shape and the joint test, and we
+do not build a magnitude claim on two coefficients.
+
+### 6.4 What the static estimate does and does not say
+
+The static δ_did of −0.0016 (0.0064) is not wrong; it is an average, and its
+tight interval is a statement about that average rather than about every month
+within it. Averaging a delayed, transitory, decaying effect over ten
+post-treatment months is exactly how it becomes indistinguishable from zero.
+
+This is worth naming, because it is the same failure mode as §4 in a different
+guise. There, an aggregate over categories hid the fact that its movement was
+composition. Here, an aggregate over event time hides the fact that a null is
+made of a hump. In both cases the aggregate is not false, and in both cases
+reporting only the aggregate would have been.
+
+The honest summary of the fee question is therefore: **no persistent change in
+the bias, a transitory reduction around three to four months after treatment,
+and no evidence that the maker's exploitable margin was eliminated** — the last
+of which §6.6 establishes directly.
+
+**A limitation we state rather than bury.** With 11 adoption cohorts, the
+event-study coefficients can still be contaminated across cohorts in the way
+Sun and Abraham (2021) describe, since a treated cohort's post-period overlaps
+another's pre-period. Never-treated series carry most of the identifying weight
+here, which limits the problem but does not eliminate it. A fully
+interaction-weighted or Callaway–Sant'Anna estimator would settle it, and we
+regard that as the natural next step rather than something this draft has done.
+
+### 6.5 The naive coefficient, and why it disagrees
 
 The composition-weighted step coefficient at the fee boundary is +0.0399 with a
 95% interval of [+0.0071, +0.0726] — nominally significant, positive, and
@@ -329,14 +488,7 @@ of +0.1435, while holding 30.5% of the composition-held-fixed weight against
 point — but the consequence is that the headline rests on a cell that has shrunk
 fiftyfold, and we decline to build a persistence claim on it.
 
-### 6.3 The publication boundary
-
-The publication coefficient is −0.0311 with an interval of [−0.0637, +0.0014].
-It contains zero, and it also contains the negative of our reference bias. On
-this sample, persistence and disappearance cannot be distinguished. We report
-that rather than choosing.
-
-### 6.4 The exploitable margin survives
+### 6.6 The exploitable margin survives
 
 The maker's advantage at prices at or above 50c, in the post-boundary window,
 computed in three fee layers on 202,725,609 maker and 167,925,545 taker sides
@@ -356,6 +508,13 @@ maker fee band, the margin declines monotonically from +0.0454 to +0.0431 and
 
 The margin documented before the boundary is therefore still present after it,
 and no plausible maker fee erases it.
+
+### 6.7 The publication boundary
+
+The publication coefficient is −0.0311 with an interval of [−0.0637, +0.0014].
+It contains zero, and it also contains the negative of our reference bias. On
+this sample, persistence and disappearance cannot be distinguished. We report
+that rather than choosing.
 
 ## 7. Robustness
 
@@ -384,9 +543,12 @@ uncontrolled extension of the horizon rather than averaged into a single figure.
 
 ## 8. Related work
 
-BDW is the immediate antecedent and remains a working paper as of this draft
-(January 2026 version; CEPR DP 20631, CESifo WP 12122, UCD WP2025_19, GWU
-2026-001, MPRA 126350). Our companion paper is a full replication of it.
+**Kalshi and the favorite–longshot bias.** BDW is the immediate antecedent and
+remains a working paper as of this draft (January 2026 version; CEPR DP 20631,
+CESifo WP 12122, UCD WP2025_19, GWU 2026-001, MPRA 126350). Our companion paper
+is a full replication of it. The favorite–longshot bias itself is among the most
+replicated regularities in betting and prediction markets, and we take its
+existence as established rather than as something this paper demonstrates.
 
 Whelan (2023) introduces fees into a prediction-market model and shows that fees
 levied on winnings generate a form of favorite–longshot bias in post-fee loss
@@ -404,6 +566,32 @@ address the fee regime, dated boundaries, or composition, and its sample ends
 seven months before ours. We note that its window straddles the sports launch,
 which is the configuration Section 4 is about.
 
+**Staggered difference-in-differences.** Our treatment is adopted at different
+dates by different series, which is the setting in which conventional two-way
+fixed effects is now known to misbehave. Goodman-Bacon (2021) shows that the
+TWFE estimand is a weighted average of all available two-group comparisons,
+including ones that use already-treated units as controls for later-treated
+ones, and that those comparisons can receive negative weight when effects are
+heterogeneous over time. Callaway and Sant'Anna (2021), Sun and Abraham (2021)
+and de Chaisemartin and d'Haultfœuille (2020) each propose estimators that
+restrict comparisons to clean control groups and aggregate the resulting
+group-time effects explicitly.
+
+Our clean-controls specification is the simplest member of that family: it
+restricts every comparison to treated-versus-never-treated, which is precisely
+the correction those papers identify as necessary. We report it alongside the
+TWFE fit rather than instead of it, and treat their agreement as the evidence
+that weighting is not driving the result. Where they disagree, the
+clean-controls estimate is the one reported. The event study in §6.2 is
+specified in the same spirit — event time is measured relative to each series'
+own adoption date, and never-treated series anchor the calendar path.
+
+**Composition and decomposition.** The within/between decomposition in §4.2 is
+standard: Simpson (1951) for the aggregation reversal, Oaxaca (1973) and Blinder
+(1973) for the two-term form, and the shift-share tradition behind Bartik (1991)
+for holding a mix fixed while letting behaviour vary. §4.4 states what we do and
+do not claim as new.
+
 ## 9. Conclusion
 
 A venue that grows by changing what it lists cannot be studied with an aggregate
@@ -414,11 +602,19 @@ decompose, report both terms — and its absence is invisible in the coefficient
 it distorts.
 
 On the question that motivated the exercise: the maker fee, correctly measured
-as the per-series and repeatedly revised surcharge it actually was, did not
-detectably change the bias. The maker's advantage at prices at or above 50c
-persists after the boundary and survives every plausible fee rate. Whether the
-public documentation of these patterns changed them cannot be settled on this
-sample, and we do not claim it can.
+as the per-series and repeatedly revised surcharge it actually was, produced a
+**transitory** reduction in the bias rather than a permanent one. Pre-treatment
+slopes were not diverging, which the selection into treatment made worth
+checking rather than assuming; post-treatment they move, peaking three to four
+months after a series is charged and decaying back within a year. The static
+difference-in-differences reports a tight null because it averages that shape
+away — the second time in this paper an aggregate turns out to be made of
+something.
+
+The maker's advantage at prices at or above 50c persists after the boundary and
+survives every plausible fee rate, so whatever the fee did, it did not remove
+the edge. Whether the public documentation of these patterns changed them cannot
+be settled on this sample, and we do not claim it can.
 
 The fee history, the category mapping, the archived source documents and the
 complete pipeline are public.
