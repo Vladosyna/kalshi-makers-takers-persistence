@@ -57,7 +57,9 @@ Kalshi's independently reported final price to the cent.
 BDW provide the first systematic evidence on pricing in Kalshi, the first
 federally licensed prediction market in the United States. Their central results
 are a favorite–longshot bias — cheap contracts winning less often than their
-prices imply, expensive ones more often — and an asymmetry between the traders
+prices imply, expensive ones more often, a regularity surveyed by Ottaviani and
+Sørensen (2008) and documented in parimutuel betting by Thaler and Ziemba
+(1988) — and an asymmetry between the traders
 who post offers (Makers) and those who accept them (Takers), with Takers losing
 roughly 32% on average against Makers' roughly 10%, and Makers earning a small
 positive return on contracts priced at or above 50c.
@@ -78,6 +80,18 @@ description.
 The construction is **under-determined by the prose**. Two decisions that the
 paper describes in words admit readings that differ by tens of percent in sample
 size. That is precisely the kind of thing replication exists to surface.
+
+**What kind of replication this is.** Clemens (2017) argues that "replication"
+is used loosely enough in economics to obscure what a discrepant result means,
+and separates tests that use the original's population and specification from
+tests that vary either. This exercise keeps both: the population is the
+original's window on the original's venue, the specification is the original's
+equation, and only the sample is drawn again. A discrepancy here is therefore
+evidence about collection, construction or coverage — not about whether the
+original's method was the right one. Hamermesh (2007) makes the related point
+that this kind of test is undersupplied relative to its value, which is part of
+why we report the gaps in §4 and §6 rather than closing them by adjusting a
+filter until the counts agree.
 
 ## 2. Independent collection
 
@@ -170,8 +184,8 @@ rather than adjusting a filter until it closes.
 
 ### 5.1 By-year slopes (their Table 9)
 
-The Mincer–Zarnowitz regression `(Y−P) = α + ψP + ε` in cents, Yes-only, with
-event-clustered standard errors:
+The Mincer–Zarnowitz regression (Mincer and Zarnowitz 1969) `(Y−P) = α + ψP + ε`
+in cents, Yes-only, with event-clustered standard errors:
 
 | Year | Ours | s.e. | BDW | Verdict |
 |---|---|---|---|---|
@@ -262,7 +276,7 @@ reproduce a filter.
 
 ## 7. Two methodological points confirmed
 
-**Clustering.** The specification calls for Cameron–Gelbach–Miller two-way
+**Clustering.** The specification calls for Cameron, Gelbach and Miller (2011) two-way
 (event, contract) cluster-robust variance, and argues that with contracts nested
 in events it reduces algebraically to one-way event clustering, since the
 intersection term equals the contract term. Estimated both ways on the real
@@ -301,6 +315,42 @@ denomination and the no-trade lookback rule explicitly; both are one sentence,
 and both are load-bearing.
 
 ---
+
+---
+
+## References
+
+Bürgi, C., Deng, W., Whelan, K., 2026. *Makers and Takers: The Economics of the
+Kalshi Prediction Market.* Working paper, January 2026 version. CEPR Discussion
+Paper 20631; CESifo Working Paper 12122; UCD Working Paper WP2025_19; GWU
+Working Paper 2026-001; MPRA Paper 126350. (The GWU series cover sheet, dated
+February 2026, reads "Makers *or* Takers"; the paper's own title page inside
+that document reads "Makers *and* Takers" and its 44 pages are identical to the
+January version. We cite the authors' title.)
+
+Cameron, A.C., Gelbach, J.B., Miller, D.L., 2011. Robust inference with
+multiway clustering. *Journal of Business & Economic Statistics* 29 (2),
+238–249.
+
+Clemens, M.A., 2017. The meaning of failed replications: a review and proposal.
+*Journal of Economic Surveys* 31 (1), 326–342.
+
+Hamermesh, D.S., 2007. Viewpoint: Replication in economics. *Canadian Journal
+of Economics* 40 (3), 715–733.
+
+Mincer, J., Zarnowitz, V., 1969. The evaluation of economic forecasts. In:
+Mincer, J. (Ed.), *Economic Forecasts and Expectations: Analysis of Forecasting
+Behavior and Performance.* National Bureau of Economic Research, New York,
+pp. 3–46.
+
+Ottaviani, M., Sørensen, P.N., 2008. The favorite-longshot bias: an overview of
+the main explanations. In: Hausch, D.B., Ziemba, W.T. (Eds.), *Handbook of
+Sports and Lottery Markets.* Elsevier, Amsterdam, pp. 83–101.
+
+Thaler, R.H., Ziemba, W.T., 1988. Anomalies: parimutuel betting markets:
+racetracks and lotteries. *Journal of Economic Perspectives* 2 (2), 161–174.
+
+*All entries were checked against their sources on 2026-08-27.*
 
 ### Declaration of interest
 

@@ -18,8 +18,8 @@ flagged for revision by the rubric's own script.
 | 4 | Originality & contribution | 9 | 9 | Fee-schedule sourcing from 16 dated captures is the novel input |
 | 5 | Methodological rigor | 9 | 9 | Pre-specification dated; post-hoc labelled; own gaps named |
 | 6 | Structure & organization | 8 | 9 | One broken cross-reference |
-| 7 | Platform & style conformity | **5** | **6** | Abstract trimmed; author block and manuscript class still open |
-|  | **Total** | **54/70** | **60/70** | Gate is 56 |
+| 7 | Platform & style conformity | **5** | 8 | Author block, references, trimmed abstract and an elsarticle build; declaration still open |
+|  | **Total** | **54/70** | **62/70** | Gate is 56 |
 
 ## What was fixed
 
@@ -45,12 +45,18 @@ flagged for revision by the rubric's own script.
 
 ## What is still open
 
-**Platform conformity, 5/10 — the one dimension still under the flag threshold.**
-Three items, none of which can be settled without the author's own input:
-
-- **No author, affiliation or corresponding-author block**, and no declaration of
-  interest. Elsevier requires both.
-- **The manuscript is Markdown**, not the Elsevier LaTeX article class.
+- **The declaration of interest is an unconfirmed checkpoint.** Both papers
+  carry an explicit `AWAITING AUTHOR CONFIRMATION` line instead of a statement.
+  This paper analyses a trading venue, so whether the author holds positions on
+  it is exactly what a reader is entitled to know, and it is not mine to
+  declare.
+- **The LaTeX build is not compile-verified.** `paper_a_composition.tex` is an
+  `elsarticle` conversion, checked by `tools/lint_tex.py` for balanced
+  environments and braces, resolved citations and cross-references, escaped
+  specials, correct tabular column counts, and — the one that matters — that
+  every figure in the Markdown survived into the `.tex`. All pass. But no LaTeX
+  toolchain is installed on this machine, so it has never been run through
+  pdflatex. Build it before submitting.
 - **IJF's exact abstract cap is unverified.** An earlier version of this file
   asserted ~200 words. ScienceDirect returns 403 to automated fetches, so the
   number could not be confirmed and the assertion is withdrawn; 238 words is

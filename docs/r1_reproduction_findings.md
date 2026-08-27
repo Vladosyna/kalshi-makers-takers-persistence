@@ -419,3 +419,19 @@ weighted how) before changing anything. This is the paper's headline quantity,
 so it is the one place where inferring the construction from their integers —
 the method used in section 2 — would be circular, because the integers *are* the
 result under test.
+
+### In-scope event count (recorded 2026-08-27)
+
+The post-filter event count had no home in any artifact, so the replication
+draft's reconciliation table was the only place it appeared. Counted directly
+against the database:
+
+| Quantity | Ours | BDW | Δ |
+|---|---|---|---|
+| Events, post-filter | 10,061 | 12,403 | −18.9% |
+| Markets, post-filter | 33,222 | 46,282 | −28.2% |
+
+`r1_report.json` carries the market count (`in_scope_markets`) but not the event
+count, so `tools/verify_paper_figures.py` can pin the second row and not the
+first. Recorded here rather than regenerated into the artifact, which would mean
+re-running R1 to add a single integer.

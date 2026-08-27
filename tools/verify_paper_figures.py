@@ -200,6 +200,53 @@ def build_checks() -> list[Check]:
     a("close-only fee delta", lock["horizon_robustness"]["close_only"]["delta_bar_fee"], "+{:.4f}",
       source="verdict_lock.horizon_robustness.close_only.delta_bar_fee")
 
+    # ======================================================================
+    # Paper B. The replication states more of R1 than Paper A does, so the
+    # by-year table and the count reconciliation are checked here rather than
+    # in the shared block above.
+    # ======================================================================
+    b = lambda *args, **kw: c.append(Check(*args, paper=PAPER_B, **kw))
+
+    b("B: total fills", fills, "{:,} fills",
+      source="r1_report.taker_field_population_by_era (summed)")
+    b("B: in-scope contracts", r1["in_scope_markets"], "{:,}",
+      source="r1_report.in_scope_markets")
+    b("B: Yes prices", lock["r1_panel_n"], "{:,}", source="verdict_lock.r1_panel_n")
+    b("B: doubled prices", lock["r1_panel_n"] * 2, "{:,}",
+      source="verdict_lock.r1_panel_n x 2")
+
+    for year in ("2021", "2022", "2023", "2024", "2025"):
+        fit = r1["by_year_psi"][year]["fit"]
+        b(f"B: psi {year}", fit["psi"], "{:.4f}", source=f"r1_report.by_year_psi.{year}.fit.psi")
+        b(f"B: psi {year} se", fit["psi_se"], "{:.4f}",
+          source=f"r1_report.by_year_psi.{year}.fit.psi_se")
+
+    b("B: maker return", mt["maker_return"], "{:.2%}",
+      source="r1_report.maker_taker_split.maker_return")
+    b("B: taker return", mt["taker_return"], "{:.2%}",
+      source="r1_report.maker_taker_split.taker_return")
+    b("B: maker return >=50c", mt["maker_return_50c_plus"], "+{:.2%}",
+      source="r1_report.maker_taker_split.maker_return_50c_plus")
+    b("B: maker share 1-10c", mt["maker_share_by_band"]["1-10c"], "{:.1%}",
+      source="r1_report.maker_taker_split.maker_share_by_band['1-10c']")
+    b("B: maker share 91-99c", mt["maker_share_by_band"]["91-99c"], "{:.1%}",
+      source="r1_report.maker_taker_split.maker_share_by_band['91-99c']")
+
+    b("B: win rate 1-10c", wr["1-10c"]["win_rate"], "{:.2%}",
+      source="r1_report.win_rate_by_band['1-10c'].win_rate")
+    b("B: win rate 91-99c", wr["91-99c"]["win_rate"], "{:.2%}",
+      source="r1_report.win_rate_by_band['91-99c'].win_rate")
+
+    rb = r1["returns_by_band"]["1-10c"]
+    b("B: bottom-band gross return", rb["mean_gross_return"], "{:.1%}",
+      source="r1_report.returns_by_band['1-10c'].mean_gross_return")
+    b("B: bottom-band net return", rb["mean_net_return"], "{:.1%}",
+      source="r1_report.returns_by_band['1-10c'].mean_net_return")
+
+    cv = r1["clustering_verification"]
+    b("B: clustering psi se", cv["one_way_psi_se"], "{:.18f}",
+      source="r1_report.clustering_verification.one_way_psi_se")
+
     return c
 
 
