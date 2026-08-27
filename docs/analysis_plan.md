@@ -314,3 +314,40 @@ stand alone, and this one is not, precisely because the identified estimate is
 null. Paper A's claim is methodological — that aggregate before/after
 comparisons on this venue are contaminated, by a measured 41% — which §5's
 escalation rule never governed and does not license.
+
+### Addendum 6 — the event study is post-hoc, and its two halves differ in status (2026-08-27, UTC)
+
+**Recorded after the fact, which is the whole point of recording it.** The
+event study in `reports/r2/event_study.json` and §6.3 of Paper A was NOT
+pre-specified. It was written on 2026-08-27, after `delta_did` had returned its
+tight null, in response to a critique that the parallel-trends assumption was
+nowhere stated or tested. §1–§6 and every threshold are untouched; the locked
+verdict is untouched.
+
+**Why the two halves are not the same kind of object.**
+
+The **pre-period test** is a validity check on an identifying assumption. It
+could only ever undermine the design, never manufacture a result, so running it
+late costs nothing but a date — and a failure would have been reported as
+readily as the pass that occurred (chi2(5) = 3.24, p = 0.66). Validity checks
+added post-hoc are unconditionally admissible in a way hypothesis tests are not.
+
+The **post-period joint test** is a hypothesis test conducted after a
+pre-specified test returned zero, and it returned p = 0.021. That is exactly the
+shape an innocent specification search produces, and the estimate it supports —
+a transitory reduction in the bias at three to four months — is interesting
+enough to be tempting. It is therefore **labelled exploratory** in the abstract,
+the introduction, §6.3, §6.4 and the conclusion, and the pre-specified null
+remains the headline answer to the fee question.
+
+**Why this is stated rather than quietly absorbed.** The paper's own argument is
+that aggregates hide structure and that the order of operations matters. A paper
+making that argument has no standing to be casual about the order in which its
+own analyses were run. The correct disposition of an exploratory finding is a
+pre-specified test on data not yet used, and that is what the conclusion asks
+for rather than claiming the effect is established.
+
+**Precedent this sets for the repo.** Any analysis added after an estimate is
+known carries its date and its status in the paper that reports it. A validity
+check says so and needs no further defence; a hypothesis test says so and is
+labelled exploratory unless it was committed in advance.

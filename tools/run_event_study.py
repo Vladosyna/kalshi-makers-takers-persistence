@@ -8,6 +8,20 @@ would rewrite the locked verdict, and a locked artifact that gets rewritten
 whenever someone wants another statistic is not locked. This writes its own
 artifact, reports/r2/event_study.json, and touches nothing else.
 
+STATUS: POST-HOC, AND THE TWO HALVES DIFFER
+-------------------------------------------
+This analysis was NOT pre-specified. It was added on 2026-08-27, after the
+static delta_did had already returned its null, in response to a critique that
+the parallel-trends assumption was never stated or checked. See
+docs/analysis_plan.md Addendum 6.
+
+The pre-period test is a validity check: it can only undermine the design, never
+manufacture a finding, so adding it late costs nothing but a date. The
+post-period joint test is a hypothesis test run after a pre-specified test
+returned zero, and anything it finds is EXPLORATORY -- the paper labels it so
+wherever it is reported. Do not let a future caller quote the post-period result
+without that label.
+
 WHAT IT TESTS
 -------------
 delta_did assumes treated and untreated series would have moved in parallel

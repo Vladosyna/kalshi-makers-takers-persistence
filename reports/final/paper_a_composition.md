@@ -6,8 +6,15 @@
 Companion replication (in preparation for a replication outlet once the
 original is published): `paper_b_replication.md`.
 All figures regenerate from `reports/r1/r1_report.json`,
-`reports/r2/verdict_lock.json`, `reports/r2/escalation_run.json`. The R2
-specification was committed on 2026-07-28, before any R2 estimate existed.
+`reports/r2/verdict_lock.json`, `reports/r2/escalation_run.json` and
+`reports/r2/event_study.json`.
+
+**Pre-specification.** The R2 specification — the composition decomposition, the
+static difference-in-differences, the verdict thresholds — was committed on
+2026-07-28, before any R2 estimate existed. **The event study in §6.3 was not**;
+it was added on 2026-08-27, after the static estimate was known. §6.4 states
+which of its two halves is a validity check and which is exploratory, and the
+abstract labels the exploratory result as such.
 
 ---
 
@@ -36,18 +43,17 @@ times, flat per contract before it was quadratic in price. That rules out a step
 dummy and calls for a difference-in-differences between treated and untreated
 series trading in the same months.
 
-Its static estimate is a tight null — **−0.0016 (0.0064)** on 98 treated series
-and 119,646 event clusters — but an event study around each series' own adoption
-date shows that null is an average concealing a shape. Pre-treatment
-coefficients are jointly indistinguishable from zero (χ²(5) = 3.24, p = 0.66),
-supporting parallel trends in a setting where treatment was visibly selected on
-market-making activity. Post-treatment coefficients are jointly **not** zero
-(χ²(10) = 21.01, p = 0.021): the bias falls in treated series three to four
-months after they are charged, then decays back. So the fee moved the bias
-transitorily rather than not at all, and the static average is the second
-aggregate in this paper to hide the structure inside it. The maker's return
-advantage at prices at or above 50c survives every fee layer and every plausible
-fee rate.
+**The pre-specified estimate is a tight null: −0.0016 (0.0064)** on 98 treated
+series and 119,646 event clusters. An event study around each series' own
+adoption date, added after that result was known and reported as such, finds
+pre-treatment coefficients jointly indistinguishable from zero (χ²(5) = 3.24,
+p = 0.66) — supporting parallel trends in a setting where treatment was visibly
+selected on market-making activity — and post-treatment coefficients jointly
+different from zero (χ²(10) = 21.01, p = 0.021). Read as **exploratory**, that
+indicates a transitory reduction in the bias three to four months after a series
+is charged, decaying back within the year; the static average would conceal such
+a shape by construction. The maker's return advantage at prices at or above 50c
+survives every fee layer and every plausible fee rate.
 
 We publish the fee history, the category mapping and the full pipeline.
 
@@ -101,19 +107,23 @@ further carve-outs — a 0.14 taker rate before August 2021, and a half rate for
 index markets covering 18.3% of the pre-2025 universe — are not modelled in the
 existing literature at all.
 
-**Properly identified, the fee moved the bias transitorily and not
-permanently.** Because treatment is per-series, staggered and revised, treated
-and untreated series trade in the same months and a difference-in-differences is
-available. Its static estimate is −0.0016 (s.e. 0.0064) against never-treated
-series. But treatment here was selected on market-making activity, which is
-adjacent to the outcome, so the identifying assumption needs evidence rather
-than assertion — and the event study that provides it also revises the reading.
-Pre-treatment coefficients are jointly zero (p = 0.66); post-treatment ones are
-jointly not (p = 0.021), with the bias falling three to four months after a
-series is charged and decaying back afterwards. The static null is an average
-over that hump. The naive step-dummy coefficient disagrees with both, for a
-third reason again: it is dominated by one category that has shrunk by a factor
-of fifty while retaining nearly a third of the composition-held-fixed weight.
+**Properly identified, the fee produced no persistent change in the bias.**
+Because treatment is per-series, staggered and revised, treated and untreated
+series trade in the same months and a difference-in-differences is available.
+The pre-specified estimate is −0.0016 (s.e. 0.0064) against never-treated
+series. Treatment here was selected on market-making activity, which is adjacent
+to the outcome, so the identifying assumption needs evidence rather than
+assertion; an event study added after that estimate was known finds
+pre-treatment coefficients jointly zero (p = 0.66), which supports it.
+
+That same event study also finds post-treatment coefficients jointly non-zero
+(p = 0.021), suggesting a transitory reduction peaking three to four months
+after a series is charged. **We report this as exploratory**, for the reason
+§6.4 sets out: it is a hypothesis test run after a pre-specified test returned
+zero, which is the shape specification search produces even when nobody went
+looking. The naive step-dummy coefficient disagrees with both, for a third
+reason again: it is dominated by one category that has shrunk by a factor of
+fifty while retaining nearly a third of the composition-held-fixed weight.
 
 **The exploitable margin survives.** The maker's return advantage at prices at
 or above 50c is +2.40% gross in the post-boundary window and never crosses zero
@@ -424,12 +434,18 @@ Slopes were not already diverging before Kalshi charged anybody. Given the
 selection argument above, this is the evidence the design needed rather than a
 formality.
 
-**But the static null is an average over dynamics that are not zero.** The joint
-test that all ten post-treatment coefficients are zero gives **χ²(10) = 21.01,
-p = 0.021**, rejecting at 5%. We report the joint test rather than the two
-starred rows, because ten coefficients tested individually at 5% would produce
-at least one "significant" month roughly forty percent of the time under the
-null; the joint statistic is what establishes there is something to explain.
+**The post-treatment coefficients are jointly non-zero — an exploratory finding,
+labelled as such here and everywhere it is repeated.** The joint test that all
+ten are zero gives **χ²(10) = 21.01, p = 0.021**, rejecting at 5%. We report the
+joint test rather than the two starred rows, because ten coefficients tested
+individually at 5% would produce at least one "significant" month roughly forty
+percent of the time under the null; the joint statistic is what establishes
+there is something to explain.
+
+The exploratory label is not modesty. This test was not pre-specified and was
+run after the pre-specified one returned zero — see the status note at the end
+of this section, which readers should take as attached to every sentence in the
+next two paragraphs.
 
 The shape is coherent: nothing at impact, a **negative** deviation peaking at
 three and four months after a series is charged — the favorite–longshot slope
@@ -446,6 +462,31 @@ to the baseline slope of 0.0254 — they imply a temporary sign reversal — wit
 correspondingly wide intervals. We report the shape and the joint test, and we
 do not build a magnitude claim on two coefficients.
 
+**When this analysis was added, and why the two halves differ in status.** The
+static difference-in-differences was pre-specified in the analysis plan
+committed on 2026-07-28. The event study was not: it was added on 2026-08-27,
+after the static estimate was known, in response to a critique of the
+then-unstated parallel-trends assumption. The two halves of it do not have the
+same epistemic standing.
+
+The pre-period test is a **validity check on an identifying assumption**. It was
+worth running whatever it showed, it can only undermine the design rather than
+manufacture a finding, and we would have reported a failure as readily as this
+pass. Adding such a check late costs nothing but a date.
+
+The post-period joint test is a **hypothesis test conducted after a
+pre-specified test returned zero**, and it returned p = 0.021. We label it
+exploratory on that basis. We say so plainly because a transitory effect
+surfacing in a second analysis, after the first found nothing, is precisely the
+pattern that innocent specification search produces — and a paper arguing that
+aggregates hide structure has no standing to be casual about the order in which
+its own analyses were run.
+
+Accordingly the pre-specified null remains the headline result for the fee
+question, and the hump is reported as a labelled exploratory finding that
+warrants a pre-specified test on future data rather than as an established
+effect.
+
 ### 6.4 What the static estimate does and does not say
 
 The static δ_did of −0.0016 (0.0064) is not wrong; it is an average, and its
@@ -459,10 +500,12 @@ composition. Here, an aggregate over event time hides the fact that a null is
 made of a hump. In both cases the aggregate is not false, and in both cases
 reporting only the aggregate would have been.
 
-The honest summary of the fee question is therefore: **no persistent change in
-the bias, a transitory reduction around three to four months after treatment,
-and no evidence that the maker's exploitable margin was eliminated** — the last
-of which §6.6 establishes directly.
+The honest summary of the fee question, with each part carrying its status:
+**pre-specified, no persistent change in the bias; exploratory, a transitory
+reduction around three to four months after treatment; and separately
+established, no evidence that the maker's exploitable margin was eliminated** —
+the last of which §6.6 shows directly and which was pre-specified as the
+fee-sensitivity ribbon.
 
 **A limitation we state rather than bury.** With 11 adoption cohorts, the
 event-study coefficients can still be contaminated across cohorts in the way
@@ -602,14 +645,19 @@ decompose, report both terms — and its absence is invisible in the coefficient
 it distorts.
 
 On the question that motivated the exercise: the maker fee, correctly measured
-as the per-series and repeatedly revised surcharge it actually was, produced a
-**transitory** reduction in the bias rather than a permanent one. Pre-treatment
-slopes were not diverging, which the selection into treatment made worth
-checking rather than assuming; post-treatment they move, peaking three to four
-months after a series is charged and decaying back within a year. The static
-difference-in-differences reports a tight null because it averages that shape
-away — the second time in this paper an aggregate turns out to be made of
-something.
+as the per-series and repeatedly revised surcharge it actually was, produced
+**no persistent change in the bias**. That is the pre-specified result and it
+stands as the answer.
+
+An event study added afterwards, in response to a referee's question about the
+identifying assumption, supports that assumption — pre-treatment slopes were not
+diverging, which the selection into treatment made worth checking rather than
+assuming — and additionally suggests a transitory reduction peaking three to
+four months after a series is charged. We label that second finding exploratory
+and do not treat it as established, because it emerged from an analysis run
+after the pre-specified one returned zero. If it is real, it should survive a
+pre-specified test on data this paper does not yet have, and that is the test we
+would want run before anyone believes it.
 
 The maker's advantage at prices at or above 50c persists after the boundary and
 survives every plausible fee rate, so whatever the fee did, it did not remove
