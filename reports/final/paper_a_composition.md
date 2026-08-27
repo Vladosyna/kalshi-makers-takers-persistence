@@ -21,45 +21,33 @@ abstract labels the exploratory result as such.
 ## Abstract
 
 Prediction markets are now studied intensively enough that their own growth has
-become a measurement problem. We show this concretely on Kalshi, using 376.8
-million fills through June 2026.
+become a measurement problem. Using 376.8 million Kalshi fills through June
+2026, we show that sports contracts went from 0.009% of the in-scope sample in
+calendar 2024 to 58.8% after May 2025, and that **41% of the aggregate change in
+the Mincer–Zarnowitz slope** at that boundary is composition rather than any
+change in how the market prices risk. The natural before/after design across
+early 2025 largely measures the arrival of an asset class.
 
-Between the 2024 calendar year and the post-May-2025 window, sports contracts
-went from **0.009% of the in-scope sample to 58.8%** — a category that barely
-existed becoming the majority of observations in fourteen months. Decomposing
-the aggregate change in the Mincer–Zarnowitz slope at that boundary,
-**41% of it is composition rather than any change in how the market prices
-risk.** A before/after comparison of aggregate bias across early 2025 — the
-natural design, and one already being applied to this venue — largely measures
-the arrival of an asset class.
-
-Having established that, we ask the persistence question properly. Two events
-make Kalshi a candidate natural experiment: a maker fee in 2025 and the public
-documentation of its pricing biases in September 2025. We reconstruct the fee
-schedule from sixteen dated captures of Kalshi's own published document and find
-it is **not the exchange-wide regime change the literature assumes**: a
-per-series surcharge covering 8.0% to 14.4% of in-scope markets, revised five
-times, flat per contract before it was quadratic in price. That rules out a step
-dummy and calls for a difference-in-differences between treated and untreated
-series trading in the same months.
+We then ask the persistence question properly. Reconstructing Kalshi's fee
+schedule from sixteen dated captures of its own published document, we find the
+2025 maker fee was **not the exchange-wide regime change the literature
+assumes**: a per-series surcharge covering 8.0% to 14.4% of in-scope markets,
+revised five times, flat per contract before it was quadratic in price. That
+rules out a step dummy and calls for a difference-in-differences between treated
+and untreated series trading in the same months.
 
 **The pre-specified estimate is a tight null: −0.0016 (0.0064)** on 98 treated
-series and 119,646 event clusters. An event study around each series' own
-adoption date, added after that result was known and reported as such, finds
-pre-treatment coefficients jointly indistinguishable from zero (χ²(5) = 3.24,
-p = 0.66) — supporting parallel trends in a setting where treatment was visibly
-selected on market-making activity — and post-treatment coefficients jointly
-different from zero (χ²(10) = 21.01, p = 0.021). Read as **exploratory**, that
-indicates a transitory reduction in the bias three to four months after a series
-is charged, decaying back within the year; the static average would conceal such
-a shape by construction. The maker's return advantage at prices at or above 50c
-survives every fee layer and every plausible fee rate.
-
-We publish the fee history, the category mapping and the full pipeline.
+series. An event study added after that result was known supports parallel
+trends (χ²(5) = 3.24, p = 0.66) and, **read as exploratory**, indicates a
+transitory reduction three to four months after a series is charged. The maker's
+return advantage at prices at or above 50c survives every plausible fee rate. We
+publish the fee history, the category mapping and the full pipeline.
 
 **Keywords:** prediction markets, favorite–longshot bias, composition effects,
 difference-in-differences, transaction fees
 **JEL:** G14, G13, D47, C52
+
+---
 
 ---
 
@@ -697,13 +685,59 @@ execution code: every endpoint used is public and unauthenticated.
 
 ---
 
+## Appendix A. Extended abstract (preprint posting)
+
+*The abstract above is trimmed for journal length. This longer version is the
+one posted with the preprint, where no cap applies; the two make identical
+claims and carry identical status labels.*
+
+Prediction markets are now studied intensively enough that their own growth has
+become a measurement problem. We show this concretely on Kalshi, using 376.8
+million fills through June 2026.
+
+Between the 2024 calendar year and the post-May-2025 window, sports contracts
+went from **0.009% of the in-scope sample to 58.8%** — a category that barely
+existed becoming the majority of observations in fourteen months. Decomposing
+the aggregate change in the Mincer–Zarnowitz slope at that boundary,
+**41% of it is composition rather than any change in how the market prices
+risk.** A before/after comparison of aggregate bias across early 2025 — the
+natural design, and one already being applied to this venue — largely measures
+the arrival of an asset class.
+
+Having established that, we ask the persistence question properly. Two events
+make Kalshi a candidate natural experiment: a maker fee in 2025 and the public
+documentation of its pricing biases in September 2025. We reconstruct the fee
+schedule from sixteen dated captures of Kalshi's own published document and find
+it is **not the exchange-wide regime change the literature assumes**: a
+per-series surcharge covering 8.0% to 14.4% of in-scope markets, revised five
+times, flat per contract before it was quadratic in price. That rules out a step
+dummy and calls for a difference-in-differences between treated and untreated
+series trading in the same months.
+
+**The pre-specified estimate is a tight null: −0.0016 (0.0064)** on 98 treated
+series and 119,646 event clusters. An event study around each series' own
+adoption date, added after that result was known and reported as such, finds
+pre-treatment coefficients jointly indistinguishable from zero (χ²(5) = 3.24,
+p = 0.66) — supporting parallel trends in a setting where treatment was visibly
+selected on market-making activity — and post-treatment coefficients jointly
+different from zero (χ²(10) = 21.01, p = 0.021). Read as **exploratory**, that
+indicates a transitory reduction in the bias three to four months after a series
+is charged, decaying back within the year; the static average would conceal such
+a shape by construction. The maker's return advantage at prices at or above 50c
+survives every fee layer and every plausible fee rate.
+
+We publish the fee history, the category mapping and the full pipeline.
+
+---
+
 ## References
 
 Bartik, T.J., 1991. *Who Benefits from State and Local Economic Development
 Policies?* W.E. Upjohn Institute for Employment Research, Kalamazoo, MI.
 
-Becker, [INITIALS TO VERIFY], 2026. [TITLE, OUTLET AND IDENTIFIER TO VERIFY
-AGAINST THE SOURCE — 72.1M Kalshi trades, June 2021 to November 2025.]
+Becker, J., 2026. The Microstructure of Wealth Transfer in Prediction Markets.
+Self-published 18 January 2026; formalized version, SSRN Working Paper 7217640,
+1 August 2026.
 
 Blinder, A.S., 1973. Wage discrimination: reduced form and structural estimates.
 *Journal of Human Resources* 8 (4), 436–455.
@@ -711,7 +745,10 @@ Blinder, A.S., 1973. Wage discrimination: reduced form and structural estimates.
 Bürgi, C., Deng, W., Whelan, K., 2026. *Makers and Takers: The Economics of the
 Kalshi Prediction Market.* Working paper, January 2026 version. CEPR Discussion
 Paper 20631; CESifo Working Paper 12122; UCD Working Paper WP2025_19; GWU
-Working Paper 2026-001; MPRA Paper 126350.
+Working Paper 2026-001; MPRA Paper 126350. (The GWU series cover sheet, dated
+February 2026, reads "Makers *or* Takers"; the paper's own title page inside
+that document reads "Makers *and* Takers" and its 44 pages are identical to the
+January version. We cite the authors' title.)
 
 Callaway, B., Sant'Anna, P.H.C., 2021. Difference-in-differences with multiple
 time periods. *Journal of Econometrics* 225 (2), 200–230.
@@ -733,8 +770,7 @@ Ottaviani, M., Sørensen, P.N., 2008. The favorite-longshot bias: an overview of
 the main explanations. In: Hausch, D.B., Ziemba, W.T. (Eds.), *Handbook of
 Sports and Lottery Markets.* Elsevier, Amsterdam, pp. 83–101.
 
-Qin, [INITIALS TO VERIFY], Yang, [INITIALS TO VERIFY], 2026. [TITLE, OUTLET AND
-IDENTIFIER TO VERIFY AGAINST THE SOURCE — reversed tail bias on Polymarket.]
+Qin, B., Yang, R., 2026. *Polymarket-v1 Database.* arXiv:2606.04217.
 
 Simpson, E.H., 1951. The interpretation of interaction in contingency tables.
 *Journal of the Royal Statistical Society, Series B* 13 (2), 238–241.
@@ -749,16 +785,12 @@ studies with heterogeneous treatment effects. *Journal of Econometrics* 225 (2),
 Thaler, R.H., Ziemba, W.T., 1988. Anomalies: parimutuel betting markets:
 racetracks and lotteries. *Journal of Economic Perspectives* 2 (2), 161–174.
 
-Whelan, K., 2023. [TITLE, OUTLET AND IDENTIFIER TO VERIFY AGAINST THE SOURCE —
-fees in a prediction-market model, fees on winnings generating a
-favorite–longshot bias in post-fee loss rates.]
+Whelan, K., 2023. *How Do Prediction Market Fees Affect Prices and
+Participants?* CEPR Discussion Paper 17972; MPRA Paper 116926, University
+Library of Munich.
 
 Wolfers, J., Zitzewitz, E., 2004. Prediction markets. *Journal of Economic
 Perspectives* 18 (2), 107–126.
 
-*Three entries carry explicit verification markers rather than reconstructed
-details. They are cited in the text from this project's own notes, and their
-full bibliographic data was not re-checked against the sources for this draft;
-filling them in is a submission blocker, and a plausible-looking guess would be
-worse than the marker.*
+*All entries were checked against their sources on 2026-08-27.*
 
