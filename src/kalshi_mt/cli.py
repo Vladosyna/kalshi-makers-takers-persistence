@@ -828,10 +828,29 @@ def _compute_escalation(config: dict) -> dict:
 
         ribbon = compute_ribbon(_margin_fn, default_fee_grid(sourced_rate))
 
+    # The fee arm reads off the DiD, in BOTH fits (analysis_plan.md Addendum 3).
+    # Both come straight out of the locked artifact, so the escalation
+    # determination is reproducible from it without recomputing anything.
+    import math as _math
+
+    def _did_estimate(fit: dict | None) -> DeltaBarEstimate | None:
+        """None means NOT IDENTIFIED, which Addendum 3 forbids reading as a
+        null. A fit with a non-finite bound is treated the same way: an
+        interval that is not a real interval cannot reject anything."""
+        if not fit:
+            return None
+        d, lo, hi = fit.get("delta_did"), fit.get("delta_did_ci_lo"), fit.get("delta_did_ci_hi")
+        if any(v is None or not _math.isfinite(v) for v in (d, lo, hi)):
+            return None
+        return DeltaBarEstimate(delta_bar=d, ci_lo=lo, ci_hi=hi)
+
+    did_block = r2_report.get("maker_fee_did") or {}
+    did_fee_fits = {name: _did_estimate(did_block.get(name)) for name in ("twfe", "clean_controls")}
+
     escalation = determine_escalation(
         delta_bar_fee=delta_bar_fee, delta_bar_pub=delta_bar_pub,
         maker_margin_layer_a=maker_margin.layer_a, maker_margin_layer_c=maker_margin.layer_c,
-        ribbon=ribbon,
+        ribbon=ribbon, did_fee_fits=did_fee_fits,
     )
     return {
         "r2_report": r2_report, "maker_margin": maker_margin, "ribbon": ribbon, "escalation": escalation,

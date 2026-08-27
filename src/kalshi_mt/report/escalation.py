@@ -15,6 +15,33 @@
   justification anywhere in this repo's write-up -- every escalation claim
   traces to one of the three conditions above.
 
+AMENDED by docs/analysis_plan.md Addendum 3 (committed 2026-07-28, before
+any estimate existed), which replaces the FEE arm of that OR:
+
+  "Escalation (S5), tightened not loosened. The fee arm's trigger now reads
+   off delta_did, and requires rejection at 5% in BOTH fits. That is a
+   stricter bar than S5's original single test on delta_bar_fee, so this
+   cannot manufacture an escalation that the committed rule would have
+   withheld."
+
+That amendment was written into the plan but never into this module, and the
+gap decided an outcome: on 2026-08-26 the fee arm fired here on delta_bar_fee
+(CI [+0.0071, +0.0726]) while both DiD fits contained zero (TWFE
+[-0.0139, +0.0365], clean controls [-0.0141, +0.0109]), so the code said
+escalate and the committed plan said do not.
+
+Implementing it after the estimates were seen is defensible only because of
+the property Addendum 3 asserts about itself: the amendment is strictly
+stricter, so applying it can WITHHOLD an escalation but can never create one.
+The reverse -- loosening a trigger after seeing a result -- would be
+indefensible, and the distinction is the whole reason this is safe to correct
+now rather than being frozen as a known-wrong implementation.
+
+delta_bar_fee is still computed, still reported in `detail`, and still written
+to the locked artifact (Addendum 3 keeps it deliberately: "Reporting only the
+new estimand would hide a specification change instead of recording one"). It
+simply no longer TRIGGERS.
+
 This module implements that three-condition OR as a single pure function.
 It does no I/O and performs no fetching -- every value it needs (the two
 composition-weighted delta_bar estimates with their CIs, the two maker
@@ -123,23 +150,68 @@ def _maker_margin_detail(
     }
 
 
+DID_FITS = ("twfe", "clean_controls")
+
+
+def _did_fee_detail(fits: dict[str, DeltaBarEstimate | None] | None) -> dict[str, Any]:
+    """The fee arm per Addendum 3: rejection at 5% in BOTH fits.
+
+    A fit that is absent or None means "not identified", which Addendum 3 is
+    explicit must never be read as a null result. Here that distinction has
+    one consequence: an unidentified fit cannot reject zero, so the trigger
+    cannot fire on it -- and `identified` records why, rather than leaving a
+    False that looks like a measured non-rejection."""
+    fits = fits or {}
+    per_fit: dict[str, Any] = {}
+    for name in DID_FITS:
+        est = fits.get(name)
+        if est is None:
+            per_fit[name] = {
+                "identified": False, "delta_did": None,
+                "ci_lo": None, "ci_hi": None, "rejects_zero": False,
+            }
+            continue
+        per_fit[name] = {
+            "identified": True,
+            "delta_did": est.delta_bar,
+            "ci_lo": est.ci_lo,
+            "ci_hi": est.ci_hi,
+            "rejects_zero": _excludes_zero(est.ci_lo, est.ci_hi),
+        }
+    both_reject = all(per_fit[n]["rejects_zero"] for n in DID_FITS)
+    return {
+        "rule": "Addendum 3: rejection at 5% required in BOTH fits",
+        "fits": per_fit,
+        "condition_met": both_reject,
+    }
+
+
 def determine_escalation(
     delta_bar_fee: DeltaBarEstimate | None,
     delta_bar_pub: DeltaBarEstimate | None,
     maker_margin_layer_a: float | None,
     maker_margin_layer_c: float | None,
     ribbon: RibbonResult | None,
+    did_fee_fits: dict[str, DeltaBarEstimate | None] | None = None,
 ) -> EscalationResult:
-    """The pure S5 escalation OR. Every one of the three named conditions
+    """The pure S5 escalation OR, with Addendum 3's fee arm. Every condition
     is evaluated independently -- no short-circuiting -- so `triggers` can
     report all conditions that fired, not just the first one checked."""
     detail: dict[str, Any] = {}
     triggers: list[str] = []
 
+    # delta_bar_fee is REPORTED but no longer TRIGGERS -- Addendum 3 moved the
+    # fee arm onto the DiD. Kept in `detail` so a reader can see both, which is
+    # the point of retaining it at all.
     fee_detail = _delta_bar_detail(delta_bar_fee)
+    fee_detail["triggers_escalation"] = False
+    fee_detail["superseded_by"] = "did_fee (Addendum 3)"
     detail["delta_bar_fee"] = fee_detail
-    if fee_detail["rejects_zero"]:
-        triggers.append("delta_bar_fee_significant")
+
+    did_detail = _did_fee_detail(did_fee_fits)
+    detail["did_fee"] = did_detail
+    if did_detail["condition_met"]:
+        triggers.append("did_fee_significant_in_both_fits")
 
     pub_detail = _delta_bar_detail(delta_bar_pub)
     detail["delta_bar_pub"] = pub_detail

@@ -49,9 +49,14 @@ def _no_trigger_escalation():
 
 
 def _fee_trigger_escalation():
+    """The fee arm fires off the DiD in BOTH fits, not off delta_bar_fee --
+    analysis_plan.md Addendum 3. A significant delta_bar_fee alone stopped
+    escalating when that amendment was finally implemented."""
+    significant = DeltaBarEstimate(delta_bar=-1.0, ci_lo=-1.5, ci_hi=-0.5)
     return determine_escalation(
-        delta_bar_fee=DeltaBarEstimate(delta_bar=-1.0, ci_lo=-1.5, ci_hi=-0.5),
+        delta_bar_fee=significant,
         delta_bar_pub=None, maker_margin_layer_a=None, maker_margin_layer_c=None, ribbon=None,
+        did_fee_fits={"twfe": significant, "clean_controls": significant},
     )
 
 
@@ -70,7 +75,7 @@ def test_determine_venue_standalone_paper_when_escalated():
     venue = determine_venue(_fee_trigger_escalation())
     assert venue["kind"] == "standalone_short_paper"
     assert venue["title"] == STANDALONE_PAPER_TITLE
-    assert venue["triggers"] == ["delta_bar_fee_significant"]
+    assert venue["triggers"] == ["did_fee_significant_in_both_fits"]
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +171,7 @@ def test_final_report_control_venue_monthly_table_rendered():
 
 def test_final_report_escalation_detail_lists_triggers():
     md = build_final_report_markdown(r2_report=_sample_r2_report(), escalation=_fee_trigger_escalation())
-    assert "delta_bar_fee_significant" in md
+    assert "did_fee_significant_in_both_fits" in md
     assert "Escalate: True" in md
 
 
