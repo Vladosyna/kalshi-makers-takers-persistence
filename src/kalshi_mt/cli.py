@@ -758,13 +758,15 @@ def _compute_escalation(config: dict) -> dict:
     ribbon on R2-window trades, and runs the S5 escalation determination.
     Returns a dict bundling everything both commands need -- callers
     should not duplicate this assembly."""
-    from kalshi_mt.fees.ribbon import compute_ribbon, default_fee_grid
+    from dataclasses import asdict
+
+    from kalshi_mt.fees.ribbon import RibbonResult, compute_ribbon, default_fee_grid
     from kalshi_mt.fees.schedule import load_fee_schedule
     from kalshi_mt.r1.filters import apply_and_log
     from kalshi_mt.r2.maker_margin import (
         REQUIRED_COLUMNS as MAKER_MARGIN_COLUMNS,
     )
-    from kalshi_mt.r2.maker_margin import compute_maker_margin_ge_50c
+    from kalshi_mt.r2.maker_margin import MakerMarginResult, compute_maker_margin_ge_50c
     from kalshi_mt.r2.report import load_r2_report
     from kalshi_mt.r2.verdicts import DeltaBarEstimate
     from kalshi_mt.report.escalation import determine_escalation
@@ -779,54 +781,96 @@ def _compute_escalation(config: dict) -> dict:
     delta_bar_fee = DeltaBarEstimate(**fee_bar) if fee_bar else None
     delta_bar_pub = DeltaBarEstimate(**pub_bar) if pub_bar else None
 
+    # CACHE THE EXPENSIVE HALF. The maker margin and its ribbon are 12 passes
+    # over ~134M in-scope fills; the 2026-08-26 run took 19h16m. `kmt report`
+    # calls this same function, so without a cache producing the write-up would
+    # cost another nineteen hours to recompute numbers that are already on disk
+    # and already committed. The cached inputs are pure functions of the tape
+    # and data/fees.yaml, neither of which changes once collection is closed.
+    #
+    # Delete reports/r2/escalation_run.json to force a recompute -- which is
+    # what to do if the tape or the fee schedule ever changes.
+    cache_path = PROJECT_ROOT / "reports" / "r2" / "escalation_run.json"
+    cached = None
+    if cache_path.exists():
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            cached = None
+        if cached and not ("maker_margin" in cached and "ribbon" in cached):
+            cached = None
+
     fee_schedule = load_fee_schedule()
-    trade_store = TradeStore(config["storage"]["parquet_dir"])
-    conn = db.connect(config["storage"]["db_path"])
-    try:
-        # Contract reading -- same pinned primary as R1/`kmt r2`.
-        apply_and_log(conn, window="r2", dollar_volume_by_ticker=None)
-        r2_scope = db.in_scope_tickers(conn, "r2")
-        # series_ticker, not category: data/fees.yaml scopes the maker fee to
-        # an enumerated list of SERIES, and category never determined a Kalshi
-        # fee at all.
-        resolutions, series_by_ticker = {}, {}
-        if r2_scope:
-            # TEMP-table join rather than an IN list -- r2_scope is 392,597
-            # tickers and SQLite binds at most 32,766 variables per statement.
-            with db.ticker_scope(conn, r2_scope) as scope:
-                for row in conn.execute(
-                    f"SELECT m.ticker, m.result, m.series_ticker FROM markets m "
-                    f"JOIN {scope} s ON s.ticker = m.ticker"
-                ).fetchall():
-                    resolutions[row["ticker"]] = row["result"]
-                    series_by_ticker[row["ticker"]] = row["series_ticker"]
-    finally:
-        conn.close()
 
-    # A FRESH stream per call, deliberately, rather than one iterator reused.
-    # The ribbon below re-runs this across an 11-point fee grid, and an
-    # exhausted generator would hand every sweep after the first an empty tape
-    # and a silently wrong ribbon. The cost is one scan per grid point, which
-    # is I/O on an otherwise idle machine; the alternative -- materialising the
-    # tape once -- is exactly what killed Pass 2 on 2026-08-24.
-    def _fills():
-        return trade_store.iter_fills(tickers=r2_scope, columns=MAKER_MARGIN_COLUMNS)
+    if cached is not None:
+        typer.secho(
+            f"reusing the maker margin and ribbon from {cache_path.name} "
+            "(delete it to force a recompute)",
+            fg=typer.colors.YELLOW, err=True,
+        )
+        maker_margin = MakerMarginResult(**cached["maker_margin"])
+        ribbon = RibbonResult(**cached["ribbon"]) if cached.get("ribbon") else None
+    else:
+        fee_schedule = load_fee_schedule()
+        trade_store = TradeStore(config["storage"]["parquet_dir"])
+        conn = db.connect(config["storage"]["db_path"])
+        try:
+            # Contract reading -- same pinned primary as R1/`kmt r2`.
+            apply_and_log(conn, window="r2", dollar_volume_by_ticker=None)
+            r2_scope = db.in_scope_tickers(conn, "r2")
+            # series_ticker, not category: data/fees.yaml scopes the maker fee to
+            # an enumerated list of SERIES, and category never determined a Kalshi
+            # fee at all.
+            resolutions, series_by_ticker = {}, {}
+            if r2_scope:
+                # TEMP-table join rather than an IN list -- r2_scope is 392,597
+                # tickers and SQLite binds at most 32,766 variables per statement.
+                with db.ticker_scope(conn, r2_scope) as scope:
+                    for row in conn.execute(
+                        f"SELECT m.ticker, m.result, m.series_ticker FROM markets m "
+                        f"JOIN {scope} s ON s.ticker = m.ticker"
+                    ).fetchall():
+                        resolutions[row["ticker"]] = row["result"]
+                        series_by_ticker[row["ticker"]] = row["series_ticker"]
+        finally:
+            conn.close()
 
-    maker_margin = compute_maker_margin_ge_50c(
-        _fills(), resolutions, series_by_ticker, fee_schedule, r2_scope
-    )
+        # A FRESH stream per call, deliberately, rather than one iterator reused.
+        # The ribbon below re-runs this across an 11-point fee grid, and an
+        # exhausted generator would hand every sweep after the first an empty tape
+        # and a silently wrong ribbon. The cost is one scan per grid point, which
+        # is I/O on an otherwise idle machine; the alternative -- materialising the
+        # tape once -- is exactly what killed Pass 2 on 2026-08-24.
+        def _fills():
+            return trade_store.iter_fills(tickers=r2_scope, columns=MAKER_MARGIN_COLUMNS)
 
-    ribbon = None
-    sourced_rate = _sourced_maker_rate(fee_schedule)
-    if sourced_rate is not None and maker_margin.n_maker_b > 0 and maker_margin.n_taker_b > 0:
-        def _margin_fn(rate: float) -> float:
-            synthetic = _maker_rate_schedule(fee_schedule, rate)
-            swept = compute_maker_margin_ge_50c(
-                _fills(), resolutions, series_by_ticker, synthetic, r2_scope
-            )
-            return swept.layer_b if swept.layer_b is not None else 0.0
+        maker_margin = compute_maker_margin_ge_50c(
+            _fills(), resolutions, series_by_ticker, fee_schedule, r2_scope
+        )
 
-        ribbon = compute_ribbon(_margin_fn, default_fee_grid(sourced_rate))
+        ribbon = None
+        sourced_rate = _sourced_maker_rate(fee_schedule)
+        if sourced_rate is not None and maker_margin.n_maker_b > 0 and maker_margin.n_taker_b > 0:
+            def _margin_fn(rate: float) -> float:
+                synthetic = _maker_rate_schedule(fee_schedule, rate)
+                swept = compute_maker_margin_ge_50c(
+                    _fills(), resolutions, series_by_ticker, synthetic, r2_scope
+                )
+                return swept.layer_b if swept.layer_b is not None else 0.0
+
+            ribbon = compute_ribbon(_margin_fn, default_fee_grid(sourced_rate))
+
+        # Persist immediately, before the determination: these two objects cost
+        # nineteen hours and nothing downstream should be able to lose them.
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps(
+                {"maker_margin": asdict(maker_margin),
+                 "ribbon": asdict(ribbon) if ribbon else None},
+                indent=2,
+            ) + "\n",
+            encoding="utf-8",
+        )
 
     # The fee arm reads off the DiD, in BOTH fits (analysis_plan.md Addendum 3).
     # Both come straight out of the locked artifact, so the escalation

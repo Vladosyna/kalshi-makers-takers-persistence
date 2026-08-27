@@ -168,11 +168,34 @@ def _render_escalation_detail(escalation: EscalationResult) -> list[str]:
         lines.append("No trigger condition fired.")
     lines.append("")
     fee = escalation.detail.get("delta_bar_fee", {})
+    did = escalation.detail.get("did_fee", {})
     pub = escalation.detail.get("delta_bar_pub", {})
     margin = escalation.detail.get("maker_margin_sign_flip", {})
+
+    # The fee arm reads off the DiD in BOTH fits (analysis_plan.md Addendum 3),
+    # so that is what this section must show. Rendering delta_bar_fee as though
+    # it were still the trigger is how a reader would conclude the rule fired
+    # when it did not -- exactly the confusion the amendment exists to prevent.
+    lines.append("**Fee arm** -- Addendum 3: the trigger reads off delta_did and needs")
+    lines.append("rejection at 5% in BOTH fits.")
+    lines.append("")
+    for name in ("twfe", "clean_controls"):
+        fit = (did.get("fits") or {}).get(name, {})
+        if not fit.get("identified"):
+            lines.append(f"- {name}: NOT IDENTIFIED (reported as such, never as a null)")
+            continue
+        lines.append(
+            f"- {name}: delta_did={_fmt(fit.get('delta_did'))} "
+            f"95% CI [{_fmt(fit.get('ci_lo'))}, {_fmt(fit.get('ci_hi'))}] -- "
+            f"rejects zero: {fit.get('rejects_zero')}"
+        )
+    lines.append(f"- **fee arm condition met: {did.get('condition_met')}**")
+    lines.append("")
     lines += [
-        f"- delta_bar_fee rejects zero at 5%: {fee.get('rejects_zero')} "
-        f"(available={fee.get('available')}, delta_bar={_fmt(fee.get('delta_bar'))})",
+        f"- delta_bar_fee = {_fmt(fee.get('delta_bar'))}, rejects zero at 5%: "
+        f"{fee.get('rejects_zero')} -- REPORTED ONLY, superseded as a trigger by the "
+        f"DiD above (Addendum 3 keeps it so a specification change is recorded, "
+        f"not hidden)",
         f"- delta_bar_pub rejects zero at 5%: {pub.get('rejects_zero')} "
         f"(available={pub.get('available')}, delta_bar={_fmt(pub.get('delta_bar'))})",
         f"- maker margin sign-flip (a vs c) surviving the ribbon: {margin.get('condition_met')} "
