@@ -258,3 +258,59 @@ Everything analysable today sits *after* both boundaries, which is why neither �
 - A weak but genuine internal substitute is available and will be reported alongside: a **placebo on the categories BDW found no bias in** (politics, entertainment — their Table 8). If publication drove a change, it should appear where the bias was and not where it was not.
 
 **Timeline consequence, recorded rather than left implicit.** §6's mid-August draft date does not survive this decision, and the operator accepted that explicitly ("время терпит"). The draft moves with collection; nothing in §2's specification, thresholds or verdict vocabulary changes.
+
+### Addendum 5 — the venue in §5 no longer exists, and the output splits in two (2026-08-27, UTC)
+
+**After the verdict, and it changes no estimand.** This addendum records a
+publishing fact and its consequence for how the results are written up. Nothing
+in §1–§6, no threshold and no verdict is touched; the escalation determination
+(`reports/r2/escalation.json`, no triggers) stands as computed.
+
+**What was checked.** §5 names two default venues for the non-escalated path:
+"IJF replication section or IREE". Both were verified before drafting:
+
+- **IREE no longer exists.** It has been replaced by the *Journal of Comments
+  and Replications in Economics* (JCRE), which **requires the replicated study
+  to have been published**. Bürgi, Deng & Whelan remains a working paper (the
+  January 2026 version; CEPR DP 20631, CESifo WP 12122, UCD WP2025_19, GWU
+  2026-001, MPRA 126350), so this route is closed until they appear in a
+  journal.
+- **No dedicated replication section could be confirmed at the IJF.** Its author
+  guidelines set out data and code policy for regular submissions; a replication
+  article type was not found. §5's assumption that one exists is unverified and
+  is not relied on.
+
+So §5's default — "a replication note" — is not an executable instruction as
+written. Not because the result is weak, but because the genre was assumed to
+be available and is not.
+
+**Consequence, decided by the operator on 2026-08-27.** The work is written as
+two papers plus an immediate preprint:
+
+- **Paper A** (`reports/final/paper_a_composition.md`), submitted now: the
+  composition confound as the headline contribution, the primary-sourced fee
+  schedule, and the persistence estimate. The replication appears only as a
+  short validation section pointing at Paper B.
+- **Paper B** (`reports/final/paper_b_replication.md`), held: the full
+  replication of BDW's own window, with the count reconciliation, the two
+  construction re-pins, the maker-return divergence and the 63-contract filter
+  that does not reproduce. Submitted to a replication outlet once the original
+  is published.
+- **A preprint now**, because the priority risk is real and dated: BDW invited
+  this question in print and run their own pipeline, and Becker (2026) — Kalshi,
+  72.1M trades to November 2025 — appeared on SSRN on 2026-08-01, three weeks
+  before this draft.
+
+**The split is designed so neither paper carries the other's substance.** Paper
+A owns the post-boundary window, the fee reconstruction and the DiD; Paper B
+owns the original's window and its divergences, and cites Paper A for the fee
+schedule it uses as a robustness input. Self-overlap is the one real hazard of
+publishing twice from one body of work, and this is the line drawn to avoid it.
+
+**What did not change.** Escalation was determined under §5 as amended by
+Addendum 3 and did not fire. Paper A is not the "standalone short paper" §5
+contemplates: that paper would have been a persistence claim strong enough to
+stand alone, and this one is not, precisely because the identified estimate is
+null. Paper A's claim is methodological — that aggregate before/after
+comparisons on this venue are contaminated, by a measured 41% — which §5's
+escalation rule never governed and does not license.
