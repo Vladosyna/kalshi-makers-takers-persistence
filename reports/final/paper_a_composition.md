@@ -67,7 +67,8 @@ difference-in-differences, transaction fees
 
 The favorite–longshot bias — cheap contracts winning less often than their
 prices imply, expensive ones more often — is among the most replicated findings
-in the study of betting and prediction markets. Kalshi, the first federally
+in the study of betting and prediction markets (Thaler and Ziemba 1988;
+Ottaviani and Sørensen 2008; Snowberg and Wolfers 2010). Kalshi, the first federally
 licensed prediction market in the United States, has recently made it newly
 measurable at scale: transaction-level data are public, the venue is large, and
 its contracts settle unambiguously.
@@ -571,9 +572,9 @@ check is a further reason not to read it behaviourally.
 **Control venue.** Polymarket's monthly slope over 2025-05 to 2025-12 provides a
 secular-trend check — not a difference-in-differences, and we do not use
 parallel-trends language. Three caveats are stated here rather than left for a
-referee. Polymarket's tail bias runs in the opposite direction to Kalshi's, so
-the comparison controls for market-wide drift in efficiency and not for level or
-sign. Archive provenance is disclosed in the repository. And cross-venue
+referee. Polymarket's tail bias runs in the opposite direction to Kalshi's (Qin and Yang
+2026), so the comparison controls for market-wide drift in efficiency and not
+for level or sign. Archive provenance is disclosed in the repository. And cross-venue
 arbitrage could propagate the publication event to Polymarket as well, which
 would strengthen a secular-trend reading rather than undermine the design.
 
@@ -590,8 +591,12 @@ uncontrolled extension of the horizon rather than averaged into a single figure.
 remains a working paper as of this draft (January 2026 version; CEPR DP 20631,
 CESifo WP 12122, UCD WP2025_19, GWU 2026-001, MPRA 126350). Our companion paper
 is a full replication of it. The favorite–longshot bias itself is among the most
-replicated regularities in betting and prediction markets, and we take its
-existence as established rather than as something this paper demonstrates.
+replicated regularities in betting and prediction markets — surveyed by
+Ottaviani and Sørensen (2008), documented in parimutuel betting by Thaler and
+Ziemba (1988) and estimated structurally by Snowberg and Wolfers (2010) — and we
+take its existence as established rather than as something this paper
+demonstrates. On prediction markets as forecasting instruments generally we
+follow Wolfers and Zitzewitz (2004).
 
 Whelan (2023) introduces fees into a prediction-market model and shows that fees
 levied on winnings generate a form of favorite–longshot bias in post-fee loss
@@ -609,6 +614,19 @@ address the fee regime, dated boundaries, or composition, and its sample ends
 seven months before ours. We note that its window straddles the sports launch,
 which is the configuration Section 4 is about.
 
+**Anomalies after publication.** The publication boundary in §6.7 asks a
+question with an established finance literature behind it. McLean and Pontiff
+(2016) estimate that cross-sectional return predictors decay by roughly 58% out
+of sample after publication, of which about a third is attributable to
+publication itself rather than to in-sample overfitting, and interpret the
+residual decay as informed trading against a documented signal. The prediction
+market case is cleaner in one respect and harder in another: contracts settle
+unambiguously, so there is no benchmark model to misspecify, but a single venue
+with two candidate treatments four months apart supports far less separation
+than a cross-section of thousands of predictors. BDW's own closing invitation is
+this literature's question asked of their result, and §6.7 reports that our
+sample cannot answer it.
+
 **Staggered difference-in-differences.** Our treatment is adopted at different
 dates by different series, which is the setting in which conventional two-way
 fixed effects is now known to misbehave. Goodman-Bacon (2021) shows that the
@@ -625,7 +643,7 @@ restricts every comparison to treated-versus-never-treated, which is precisely
 the correction those papers identify as necessary. We report it alongside the
 TWFE fit rather than instead of it, and treat their agreement as the evidence
 that weighting is not driving the result. Where they disagree, the
-clean-controls estimate is the one reported. The event study in §6.2 is
+clean-controls estimate is the one reported. The event study in §6.3 is
 specified in the same spirit — event time is measured relative to each series'
 own adoption date, and never-treated series anchor the calendar path.
 
@@ -676,3 +694,71 @@ archived captures of Kalshi's fee schedule with the parser that turns them into
 a machine-readable step function, the category mapping table, and the committed
 analysis plan with its dated amendments. It is MIT-licensed and contains no
 execution code: every endpoint used is public and unauthenticated.
+
+---
+
+## References
+
+Bartik, T.J., 1991. *Who Benefits from State and Local Economic Development
+Policies?* W.E. Upjohn Institute for Employment Research, Kalamazoo, MI.
+
+Becker, [INITIALS TO VERIFY], 2026. [TITLE, OUTLET AND IDENTIFIER TO VERIFY
+AGAINST THE SOURCE — 72.1M Kalshi trades, June 2021 to November 2025.]
+
+Blinder, A.S., 1973. Wage discrimination: reduced form and structural estimates.
+*Journal of Human Resources* 8 (4), 436–455.
+
+Bürgi, C., Deng, W., Whelan, K., 2026. *Makers and Takers: The Economics of the
+Kalshi Prediction Market.* Working paper, January 2026 version. CEPR Discussion
+Paper 20631; CESifo Working Paper 12122; UCD Working Paper WP2025_19; GWU
+Working Paper 2026-001; MPRA Paper 126350.
+
+Callaway, B., Sant'Anna, P.H.C., 2021. Difference-in-differences with multiple
+time periods. *Journal of Econometrics* 225 (2), 200–230.
+
+de Chaisemartin, C., d'Haultfœuille, X., 2020. Two-way fixed effects estimators
+with heterogeneous treatment effects. *American Economic Review* 110 (9),
+2964–2996.
+
+Goodman-Bacon, A., 2021. Difference-in-differences with variation in treatment
+timing. *Journal of Econometrics* 225 (2), 254–277.
+
+McLean, R.D., Pontiff, J., 2016. Does academic research destroy stock return
+predictability? *Journal of Finance* 71 (1), 5–32.
+
+Oaxaca, R., 1973. Male–female wage differentials in urban labor markets.
+*International Economic Review* 14 (3), 693–709.
+
+Ottaviani, M., Sørensen, P.N., 2008. The favorite-longshot bias: an overview of
+the main explanations. In: Hausch, D.B., Ziemba, W.T. (Eds.), *Handbook of
+Sports and Lottery Markets.* Elsevier, Amsterdam, pp. 83–101.
+
+Qin, [INITIALS TO VERIFY], Yang, [INITIALS TO VERIFY], 2026. [TITLE, OUTLET AND
+IDENTIFIER TO VERIFY AGAINST THE SOURCE — reversed tail bias on Polymarket.]
+
+Simpson, E.H., 1951. The interpretation of interaction in contingency tables.
+*Journal of the Royal Statistical Society, Series B* 13 (2), 238–241.
+
+Snowberg, E., Wolfers, J., 2010. Explaining the favorite–long shot bias: is it
+risk-love or misperceptions? *Journal of Political Economy* 118 (4), 723–746.
+
+Sun, L., Abraham, S., 2021. Estimating dynamic treatment effects in event
+studies with heterogeneous treatment effects. *Journal of Econometrics* 225 (2),
+175–199.
+
+Thaler, R.H., Ziemba, W.T., 1988. Anomalies: parimutuel betting markets:
+racetracks and lotteries. *Journal of Economic Perspectives* 2 (2), 161–174.
+
+Whelan, K., 2023. [TITLE, OUTLET AND IDENTIFIER TO VERIFY AGAINST THE SOURCE —
+fees in a prediction-market model, fees on winnings generating a
+favorite–longshot bias in post-fee loss rates.]
+
+Wolfers, J., Zitzewitz, E., 2004. Prediction markets. *Journal of Economic
+Perspectives* 18 (2), 107–126.
+
+*Three entries carry explicit verification markers rather than reconstructed
+details. They are cited in the text from this project's own notes, and their
+full bibliographic data was not re-checked against the sources for this draft;
+filling them in is a submission blocker, and a plausible-looking guess would be
+worse than the marker.*
+
