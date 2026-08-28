@@ -13,8 +13,8 @@ external rubric used for Paper A — the final quality gate of
 | 4 | Originality & contribution | 8 | 8 | The two construction resolutions and the 95.7% validation carry it |
 | 5 | Methodological rigor | 9 | 9 | Verdict vocabulary ex ante; count gate before estimates; branches reported |
 | 6 | Structure & organization | 9 | 9 | — |
-| 7 | Platform & style conformity | **4** | **6** | Author block and references added; manuscript class still open |
-|  | **Total** | **52/70** | **58/70** | Gate is 56 |
+| 7 | Platform & style conformity | **4** | 7 | Author block, references and both declarations; manuscript class still open |
+|  | **Total** | **52/70** | **59/70** | Gate is 56 |
 
 ## What was fixed
 
@@ -64,4 +64,7 @@ look.
 - **The maker-return divergence (−1.33% against −9.64%) stands unresolved**, and
   the paper commits to contacting the original authors before submission. That
   is a real outstanding action, not a caveat.
-- **The declaration of interest is an unconfirmed checkpoint**, as in Paper A.
+- The declarations are settled as of 2026-08-28: interest declared none, and a
+  Generative AI declaration added --- it was absent from both papers, not merely
+  unconfirmed. The end matter was also reordered, since this paper had its
+  reference list *before* its declarations.

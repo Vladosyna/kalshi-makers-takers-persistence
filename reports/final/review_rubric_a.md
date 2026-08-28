@@ -18,8 +18,8 @@ flagged for revision by the rubric's own script.
 | 4 | Originality & contribution | 9 | 9 | Fee-schedule sourcing from 16 dated captures is the novel input |
 | 5 | Methodological rigor | 9 | 9 | Pre-specification dated; post-hoc labelled; own gaps named |
 | 6 | Structure & organization | 8 | 9 | One broken cross-reference |
-| 7 | Platform & style conformity | **5** | 8 | Author block, references, trimmed abstract and an elsarticle build; declaration still open |
-|  | **Total** | **54/70** | **62/70** | Gate is 56 |
+| 7 | Platform & style conformity | **5** | 9 | Author block, references, trimmed abstract, elsarticle build, both required declarations |
+|  | **Total** | **54/70** | **63/70** | Gate is 56 |
 
 ## What was fixed
 
@@ -43,13 +43,33 @@ flagged for revision by the rubric's own script.
    still leading and the exploratory label still attached. The original is kept
    as Appendix A for the preprint posting, where no length cap applies.
 
+## Declarations, added 2026-08-28
+
+Two, and the second was missing entirely rather than merely unconfirmed.
+
+**Declaration of interest --- settled.** The author confirmed no competing
+interest and no trading on Kalshi, so the `AWAITING AUTHOR CONFIRMATION`
+placeholder is replaced by a statement in both papers.
+
+**Declaration of Generative AI --- was absent, now added.** Elsevier requires it
+as a separate named section placed immediately before the reference list; the
+rubric does not ask for it and neither did this scorecard, which is why the gap
+survived a review that was otherwise looking at exactly this dimension. It names
+the tool, what it was used for --- drafting and revising prose, and generating
+the collection and analysis code --- and the author's full responsibility for
+the content.
+
+The two are deliberately kept apart from the methodology. AI appears here only
+as a writing and coding tool; nothing in this paper's analysis treats AI as an
+object of study, and the declaration must not read as though it did.
+
+Both are now enforced: `tools/lint_tex.py` fails if either section is missing,
+if the AI declaration follows the bibliography instead of preceding it, or if an
+`AWAITING` placeholder survives; `tools/verify_paper_figures.py` applies the
+same three checks to both Markdown manuscripts.
+
 ## What is still open
 
-- **The declaration of interest is an unconfirmed checkpoint.** Both papers
-  carry an explicit `AWAITING AUTHOR CONFIRMATION` line instead of a statement.
-  This paper analyses a trading venue, so whether the author holds positions on
-  it is exactly what a reader is entitled to know, and it is not mine to
-  declare.
 - **The LaTeX build is not compile-verified.** `paper_a_composition.tex` is an
   `elsarticle` conversion, checked by `tools/lint_tex.py` for balanced
   environments and braces, resolved citations and cross-references, escaped

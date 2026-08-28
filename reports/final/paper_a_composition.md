@@ -566,7 +566,11 @@ secular-trend check — not a difference-in-differences, and we do not use
 parallel-trends language. Three caveats are stated here rather than left for a
 referee. Polymarket's tail bias runs in the opposite direction to Kalshi's (Qin and Yang
 2026), so the comparison controls for market-wide drift in efficiency and not
-for level or sign. Archive provenance is disclosed in the repository. And cross-venue
+for level or sign. The Polymarket data come from a public third-party archive, which the
+author worked with in separate research on Polymarket forecasting — the project this
+paper's question originated in. That work measures forecasters' skill; this one
+measures the market's own calibration path, so the archive is put to a different
+use here, and its full provenance is documented in the repository. And cross-venue
 arbitrage could propagate the publication event to Polymarket as well, which
 would strengthen a secular-trend reading rather than undermine the design.
 
@@ -681,13 +685,10 @@ complete pipeline are public.
 
 ### Declaration of interest
 
-**[AWAITING AUTHOR CONFIRMATION — do not submit until this line is settled.]**
-The intended statement is that the author has no competing financial interest in
-Kalshi or any other prediction market, holds no positions on the venue studied,
-and received no funding for this work. This paper analyses a trading venue, so
-whether the author trades on it is exactly the disclosure a reader is entitled
-to; it is left as an explicit checkpoint rather than asserted on the author's
-behalf.
+The author declares no competing financial interest. The author does not trade
+on Kalshi, holds no positions on the venue studied, has no financial or personal
+relationship with the exchange or with the authors of the work replicated, and
+received no funding for this research.
 
 ### Data and code availability
 
@@ -699,48 +700,13 @@ execution code: every endpoint used is public and unauthenticated.
 
 ---
 
-## Appendix A. Extended abstract (preprint posting)
+## Declaration of Generative AI and AI-assisted technologies in the writing process
 
-*The abstract above is trimmed for journal length. This longer version is the
-one posted with the preprint, where no cap applies; the two make identical
-claims and carry identical status labels.*
-
-Prediction markets are now studied intensively enough that their own growth has
-become a measurement problem. We show this concretely on Kalshi, using 376.8
-million fills through June 2026.
-
-Between the 2024 calendar year and the post-May-2025 window, sports contracts
-went from **0.009% of the in-scope sample to 58.8%** — a category that barely
-existed becoming the majority of observations in fourteen months. Decomposing
-the aggregate change in the Mincer–Zarnowitz slope at that boundary,
-**41% of it is composition rather than any change in how the market prices
-risk.** A before/after comparison of aggregate bias across early 2025 — the
-natural design, and one already being applied to this venue — largely measures
-the arrival of an asset class.
-
-Having established that, we ask the persistence question properly. Two events
-make Kalshi a candidate natural experiment: a maker fee in 2025 and the public
-documentation of its pricing biases in September 2025. We reconstruct the fee
-schedule from sixteen dated captures of Kalshi's own published document and find
-it is **not the exchange-wide regime change the literature assumes**: a
-per-series surcharge covering 8.0% to 14.4% of in-scope markets, revised five
-times, flat per contract before it was quadratic in price. That rules out a step
-dummy and calls for a difference-in-differences between treated and untreated
-series trading in the same months.
-
-**The pre-specified estimate is a tight null: −0.0016 (0.0064)** on 98 treated
-series and 119,646 event clusters. An event study around each series' own
-adoption date, added after that result was known and reported as such, finds
-pre-treatment coefficients jointly indistinguishable from zero (χ²(5) = 3.24,
-p = 0.66) — supporting parallel trends in a setting where treatment was visibly
-selected on market-making activity — and post-treatment coefficients jointly
-different from zero (χ²(10) = 21.01, p = 0.021). Read as **exploratory**, that
-indicates a transitory reduction in the bias three to four months after a series
-is charged, decaying back within the year; the static average would conceal such
-a shape by construction. The maker's return advantage at prices at or above 50c
-survives every fee layer and every plausible fee rate.
-
-We publish the fee history, the category mapping and the full pipeline.
+During the preparation of this work the author used Claude (Anthropic) in order
+to draft and revise manuscript prose and to generate the data-collection and
+analysis code in the accompanying repository. After using this tool the author
+reviewed and edited the content as needed and takes full responsibility for the
+content of the publication.
 
 ---
 
@@ -808,3 +774,49 @@ Perspectives* 18 (2), 107–126.
 
 *All entries were checked against their sources on 2026-08-27.*
 
+---
+
+## Appendix A. Extended abstract (preprint posting)
+
+*The abstract above is trimmed for journal length. This longer version is the
+one posted with the preprint, where no cap applies; the two make identical
+claims and carry identical status labels.*
+
+Prediction markets are now studied intensively enough that their own growth has
+become a measurement problem. We show this concretely on Kalshi, using 376.8
+million fills through June 2026.
+
+Between the 2024 calendar year and the post-May-2025 window, sports contracts
+went from **0.009% of the in-scope sample to 58.8%** — a category that barely
+existed becoming the majority of observations in fourteen months. Decomposing
+the aggregate change in the Mincer–Zarnowitz slope at that boundary,
+**41% of it is composition rather than any change in how the market prices
+risk.** A before/after comparison of aggregate bias across early 2025 — the
+natural design, and one already being applied to this venue — largely measures
+the arrival of an asset class.
+
+Having established that, we ask the persistence question properly. Two events
+make Kalshi a candidate natural experiment: a maker fee in 2025 and the public
+documentation of its pricing biases in September 2025. We reconstruct the fee
+schedule from sixteen dated captures of Kalshi's own published document and find
+it is **not the exchange-wide regime change the literature assumes**: a
+per-series surcharge covering 8.0% to 14.4% of in-scope markets, revised five
+times, flat per contract before it was quadratic in price. That rules out a step
+dummy and calls for a difference-in-differences between treated and untreated
+series trading in the same months.
+
+**The pre-specified estimate is a tight null: −0.0016 (0.0064)** on 98 treated
+series and 119,646 event clusters. An event study around each series' own
+adoption date, added after that result was known and reported as such, finds
+pre-treatment coefficients jointly indistinguishable from zero (χ²(5) = 3.24,
+p = 0.66) — supporting parallel trends in a setting where treatment was visibly
+selected on market-making activity — and post-treatment coefficients jointly
+different from zero (χ²(10) = 21.01, p = 0.021). Read as **exploratory**, that
+indicates a transitory reduction in the bias three to four months after a series
+is charged, decaying back within the year; the static average would conceal such
+a shape by construction. The maker's return advantage at prices at or above 50c
+survives every fee layer and every plausible fee rate.
+
+We publish the fee history, the category mapping and the full pipeline.
+
+---

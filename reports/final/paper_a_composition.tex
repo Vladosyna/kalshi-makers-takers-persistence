@@ -662,7 +662,12 @@ provides a secular-trend check --- not a difference-in-differences, and we do
 not use parallel-trends language. Three caveats are stated here rather than left
 for a referee. Polymarket's tail bias runs in the opposite direction to Kalshi's
 \citep{qin2026}, so the comparison controls for market-wide drift in efficiency
-and not for level or sign. Archive provenance is disclosed in the repository.
+and not for level or sign. The Polymarket data come from a public third-party
+archive, which the author worked with in separate research on Polymarket
+forecasting --- the project this paper's question originated in. That work
+measures forecasters' skill; this one measures the market's own calibration
+path, so the archive is put to a different use here, and its full provenance is
+documented in the repository.
 And cross-venue arbitrage could propagate the publication event to Polymarket as
 well, which would strengthen a secular-trend reading rather than undermine the
 design.
@@ -778,13 +783,10 @@ complete pipeline are public.
 % ---------------------------------------------------------------------------
 \section*{Declaration of interest}
 
-\textbf{[AWAITING AUTHOR CONFIRMATION --- do not submit until this line is
-settled.]} The intended statement is that the author has no competing financial
-interest in Kalshi or any other prediction market, holds no positions on the
-venue studied, and received no funding for this work. This paper analyses a
-trading venue, so whether the author trades on it is exactly the disclosure a
-reader is entitled to; it is left as an explicit checkpoint rather than asserted
-on the author's behalf.
+The author declares no competing financial interest. The author does not trade
+on Kalshi, holds no positions on the venue studied, has no financial or personal
+relationship with the exchange or with the authors of the work replicated, and
+received no funding for this research.
 
 \section*{Data and code availability}
 
@@ -793,6 +795,19 @@ archived captures of Kalshi's fee schedule with the parser that turns them into
 a machine-readable step function, the category mapping table, and the committed
 analysis plan with its dated amendments. It is MIT-licensed and contains no
 execution code: every endpoint used is public and unauthenticated.
+
+% Elsevier requires this as its own section, immediately before the reference
+% list. It covers the writing process only -- it is deliberately not a
+% methodology statement, and nothing in this paper's analysis treats AI as an
+% object of study.
+\section*{Declaration of Generative AI and AI-assisted technologies in the
+writing process}
+
+During the preparation of this work the author used Claude (Anthropic) in order
+to draft and revise manuscript prose and to generate the data-collection and
+analysis code in the accompanying repository. After using this tool the author
+reviewed and edited the content as needed and takes full responsibility for the
+content of the publication.
 
 % ---------------------------------------------------------------------------
 \begin{thebibliography}{99}

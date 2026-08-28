@@ -286,6 +286,29 @@ def consistency_checks() -> list[tuple[str, bool, str]]:
         f"{d['within']:.6f} + {d['between']:.6f} != {d['aggregate']:.6f}",
     ))
 
+    # Elsevier requires a Declaration of interest and a separate Generative AI
+    # declaration, the latter immediately before the reference list. Both papers
+    # carried an AWAITING placeholder until 2026-08-28; a placeholder that
+    # survives into a submission is worse than no declaration, so it is a check.
+    for paper in (PAPER_A, PAPER_B):
+        t = _text(paper)
+        out.append((
+            f"{paper.name}: both declarations present, no placeholder",
+            ("## Declaration of Generative AI" in t
+             and "### Declaration of interest" in t
+             and "AWAITING" not in t),
+            f"generative-AI={'## Declaration of Generative AI' in t} "
+            f"interest={'### Declaration of interest' in t} "
+            f"placeholder-left={'AWAITING' in t}",
+        ))
+        ai = t.find("## Declaration of Generative AI")
+        refs = t.find("\n## References")
+        out.append((
+            f"{paper.name}: AI declaration precedes the reference list",
+            ai != -1 and refs != -1 and ai < refs,
+            f"ai at {ai}, references at {refs}",
+        ))
+
     return out
 
 

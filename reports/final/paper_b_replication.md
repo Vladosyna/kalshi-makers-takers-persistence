@@ -318,6 +318,31 @@ and both are load-bearing.
 
 ---
 
+### Declaration of interest
+
+The author declares no competing financial interest. The author does not trade
+on Kalshi, holds no positions on the venue studied, has no financial or personal
+relationship with the exchange or with the authors of the work replicated, and
+received no funding for this research.
+
+### Data and code availability
+
+The full pipeline, the collected universe's derived artifacts, the analysis
+plan with dated amendments, and a machine-readable reconstruction of Kalshi's
+fee schedule from sixteen archived primary captures are public and
+MIT-licensed. The repository contains no execution code: every endpoint used is
+public and unauthenticated.
+
+## Declaration of Generative AI and AI-assisted technologies in the writing process
+
+During the preparation of this work the author used Claude (Anthropic) in order
+to draft and revise manuscript prose and to generate the data-collection and
+analysis code in the accompanying repository. After using this tool the author
+reviewed and edited the content as needed and takes full responsibility for the
+content of the publication.
+
+---
+
 ## References
 
 Bürgi, C., Deng, W., Whelan, K., 2026. *Makers and Takers: The Economics of the
@@ -351,21 +376,3 @@ Thaler, R.H., Ziemba, W.T., 1988. Anomalies: parimutuel betting markets:
 racetracks and lotteries. *Journal of Economic Perspectives* 2 (2), 161–174.
 
 *All entries were checked against their sources on 2026-08-27.*
-
-### Declaration of interest
-
-**[AWAITING AUTHOR CONFIRMATION — do not submit until this line is settled.]**
-The intended statement is that the author has no competing financial interest in
-Kalshi or any other prediction market, holds no positions on the venue studied,
-and received no funding for this work. This paper analyses a trading venue, so
-whether the author trades on it is exactly the disclosure a reader is entitled
-to; it is left as an explicit checkpoint rather than asserted on the author's
-behalf.
-
-### Data and code availability
-
-The full pipeline, the collected universe's derived artifacts, the analysis
-plan with dated amendments, and a machine-readable reconstruction of Kalshi's
-fee schedule from sixteen archived primary captures are public and
-MIT-licensed. The repository contains no execution code: every endpoint used is
-public and unauthenticated.

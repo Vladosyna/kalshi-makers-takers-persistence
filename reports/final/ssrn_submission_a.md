@@ -53,11 +53,22 @@ are public and MIT-licensed at
 `github.com/Vladosyna/kalshi-makers-takers-persistence`. The repository contains
 no execution code: every endpoint used is public and unauthenticated.
 
-## Two things to settle before uploading
+## Declarations carried in the manuscript
 
-1. **The declaration of interest is still an open checkpoint** in the
-   manuscript. SSRN does not require it, but posting a paper about a trading
-   venue with an unresolved position-disclosure line is worse than pointless.
-2. **The companion replication is not posted with this.** Paper B is held until
-   the original is published. If both were posted together, a reader would take
-   the replication as also submitted somewhere, which is not the case.
+Two, both already written into the paper:
+
+- **Declaration of interest** --- none. The author does not trade on Kalshi,
+  holds no positions on the venue studied, has no relationship with the exchange
+  or with the replicated authors, and received no funding.
+- **Declaration of Generative AI and AI-assisted technologies in the writing
+  process** --- Claude (Anthropic), used to draft and revise prose and to
+  generate the collection and analysis code, with the author taking full
+  responsibility. Elsevier requires this as its own section immediately before
+  the reference list, which is where it sits. SSRN does not require it, but the
+  posted preprint and the journal submission should not differ on a disclosure.
+
+## One thing to settle before uploading
+
+**The companion replication is not posted with this.** Paper B is held until the
+original is published. If both went up together, a reader would take the
+replication as also submitted somewhere, which is not the case.

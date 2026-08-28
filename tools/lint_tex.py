@@ -151,6 +151,31 @@ def check_numbers_survived(tex: str, md: str) -> list[str]:
     return [f"figure {n!r} is in the Markdown but not the .tex" for n in missing]
 
 
+def check_required_sections(src: str) -> list[str]:
+    """Elsevier requires both declarations, and the AI one must sit immediately
+    before the reference list. An unresolved AWAITING marker is a hard stop --
+    the whole point of that marker is that the manuscript must not ship with it."""
+    # Plain substring tests, deliberately not regexes. Every pattern here starts
+    # with a backslash, and the escaping needed to match one through a regex is
+    # exactly the kind of thing that silently matches nothing instead of failing
+    # loudly -- which is how this check first shipped reporting a section that
+    # was sitting right there in the file.
+    errs = []
+    for needle, label in (
+        (r"\section*{Declaration of interest}", "Declaration of interest"),
+        ("Declaration of Generative AI", "Generative AI declaration"),
+    ):
+        if needle not in src:
+            errs.append(f"missing required section: {label}")
+    if "AWAITING" in src:
+        errs.append("an AWAITING placeholder is still in the manuscript")
+    ai = src.find("Declaration of Generative AI")
+    bib = src.find(r"\begin{thebibliography}")
+    if ai != -1 and bib != -1 and ai > bib:
+        errs.append("the AI declaration must precede the reference list, not follow it")
+    return errs
+
+
 def main() -> int:
     if not TEX.exists():
         print(f"no such file: {TEX}")
@@ -168,6 +193,7 @@ def main() -> int:
         ("cross-references resolve", check_refs(src)),
         ("specials escaped", check_specials(src)),
         ("tabular column counts", check_tabular_columns(src)),
+        ("required declarations present", check_required_sections(src)),
         ("figures survived the conversion", check_numbers_survived(raw, md)),
     ]
 
