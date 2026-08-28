@@ -11,7 +11,12 @@
 % the source structurally, which is still worth doing -- a compiler will happily
 % build a document with a wrong number in it.
 
-\documentclass[preprint,12pt]{elsarticle}
+% authoryear, not the class default. The prose is written for it -- sentences
+% like "Goodman-Bacon (2021) shows that the TWFE estimand is..." read as
+% "[7] shows that..." under the numeric default, and author-date is the norm in
+% this literature and at the target journal. The \bibitem labels below are
+% already written in [Author(Year)] form for exactly this.
+\documentclass[preprint,12pt,authoryear]{elsarticle}
 
 \usepackage[utf8]{inputenc}
 % lmodern before fontenc, and it is not cosmetic. With T1 encoding and stock
