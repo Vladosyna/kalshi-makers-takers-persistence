@@ -1,7 +1,16 @@
-"""Structural checks on the LaTeX build, for a machine with no LaTeX on it.
+"""Structural checks on the LaTeX source, of the kind a compiler does not do.
 
-This is not a substitute for compiling. It is what can be established without a
-compiler, so that the .tex is not shipped completely unexamined:
+Written when no TeX was installed here, and kept after one was, because the two
+checks catch different things. `tools/build_paper_pdf.py` compiles and then
+verifies the rendered PDF against the analysis artifacts; this reads the source
+and asks whether it is internally coherent. A compiler is happy with an orphan
+`\\bibitem`, a table whose rows disagree with its preamble in a way that still
+typesets, or a figure that never made it across from the Markdown.
+
+It also runs in CI, where installing a TeX distribution to lint a file would be
+a poor trade.
+
+What it establishes:
 
   * environments open and close in order;
   * braces balance;
@@ -210,8 +219,9 @@ def main() -> int:
         print(f"{bad} structural problem(s). NOTE: this is not a compile -- "
               "no LaTeX toolchain is installed here.")
         return 1
-    print("structurally clean. NOT COMPILE-VERIFIED: no LaTeX toolchain is "
-          "installed here, so run pdflatex before trusting it.")
+    print("structurally clean. This is not a compile -- run "
+          "tools/build_paper_pdf.py for that, which also checks the rendered "
+          "PDF against the analysis artifacts.")
     return 0
 
 

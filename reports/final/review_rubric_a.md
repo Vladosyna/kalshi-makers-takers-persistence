@@ -70,13 +70,14 @@ same three checks to both Markdown manuscripts.
 
 ## What is still open
 
-- **The LaTeX build is not compile-verified.** `paper_a_composition.tex` is an
-  `elsarticle` conversion, checked by `tools/lint_tex.py` for balanced
-  environments and braces, resolved citations and cross-references, escaped
-  specials, correct tabular column counts, and — the one that matters — that
-  every figure in the Markdown survived into the `.tex`. All pass. But no LaTeX
-  toolchain is installed on this machine, so it has never been run through
-  pdflatex. Build it before submitting.
+- **The LaTeX build compiles, as of 2026-08-28.** `paper_a_composition.tex`
+  builds to a 20-page PDF with no errors and no undefined references, and
+  `tools/build_paper_pdf.py` then checks the rendered PDF against the analysis
+  artifacts (22/22). Two defects surfaced only at compile time and neither was
+  visible to the structural linter: `microtype`'s font expansion is a fatal
+  error on bitmap fonts, and stock Computer Modern under T1 had MiKTeX
+  generating and embedding a METAFONT bitmap for the title — a fuzzy heading in
+  a submitted paper. `lmodern` fixes both; every glyph in the PDF is now Type1.
 - **IJF's exact abstract cap is unverified.** An earlier version of this file
   asserted ~200 words. ScienceDirect returns 403 to automated fetches, so the
   number could not be confirmed and the assertion is withdrawn; 238 words is

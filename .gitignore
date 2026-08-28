@@ -35,3 +35,21 @@ reports/*
 !reports/r2/
 !reports/final/
 .env
+
+# LaTeX auxiliary output. The PDF under reports/final/ is committed deliberately
+# -- it is the artifact that gets submitted -- but the fifteen files pdflatex
+# writes beside it are build scratch. tools/build_paper_pdf.py compiles in a
+# temporary directory for exactly this reason; these patterns catch the case
+# where someone runs pdflatex by hand in the source directory.
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.spl
+*.synctex.gz
+*.toc
+reports/final/*.log

@@ -51,6 +51,13 @@ jobs:
         # number in it.
         run: uv run python tools/lint_tex.py
 
+      - name: Submission PDF matches the artifacts
+        # Checks the committed PDF, not the source -- the compile itself needs a
+        # TeX distribution and is done locally by tools/build_paper_pdf.py. Two
+        # of that build's defects were invisible to the structural linter and
+        # only appeared at compile time, so what ships is worth re-checking.
+        run: uv run python tools/build_paper_pdf.py --check-only
+
       - name: Documentation links resolve
         # Case included, and resolved against git's index rather than the
         # working directory -- GitHub serves what git tracks. This step failed

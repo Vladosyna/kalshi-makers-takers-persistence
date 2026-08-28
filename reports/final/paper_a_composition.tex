@@ -1,22 +1,41 @@
 % Composition Shift and the Measurement of Bias in a Growing Prediction Market
 % Elsevier elsarticle build of reports/final/paper_a_composition.md
 %
-% NOT COMPILE-VERIFIED. No LaTeX toolchain was available on the machine where
-% this was written, so it has been checked structurally (balanced environments,
-% escaped specials, every figure present) by tools/lint_tex.py but never run
-% through pdflatex. Build it before believing it.
+% Build:  python tools/build_paper_pdf.py
+%          (three pdflatex passes in a scratch directory, then a check that the
+%          rendered PDF contains the figures the artifacts say it should)
+% Needs:  elsarticle.cls, lmodern, microtype, booktabs, amsmath, hyperref
 %
-% Build:  pdflatex paper_a_composition && pdflatex paper_a_composition
-% Needs:  elsarticle.cls, booktabs, amsmath, hyperref (all in TeX Live)
+% Last built 2026-08-28: 20 pages, 0 errors, 0 undefined references, 1 overfull
+% box at 2.9pt. All fonts Type1; nothing rasterised. tools/lint_tex.py checks
+% the source structurally, which is still worth doing -- a compiler will happily
+% build a document with a wrong number in it.
 
 \documentclass[preprint,12pt]{elsarticle}
 
 \usepackage[utf8]{inputenc}
+% lmodern before fontenc, and it is not cosmetic. With T1 encoding and stock
+% Computer Modern, MiKTeX renders some sizes from METAFONT bitmaps -- the first
+% build of this document generated and embedded ecrm1728.pk for the title, which
+% is fuzzy at any zoom and wrong to submit. Latin Modern is the scalable Type1
+% equivalent, so the PDF is vector throughout, and it is also what lets
+% microtype's font expansion run at all (expansion refuses on bitmap fonts, and
+% that refusal is a fatal error, not a warning).
+\usepackage{lmodern}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath}
 \usepackage{booktabs}
 \usepackage{textcomp}
+\usepackage{microtype}
 \usepackage[hidelinks]{hyperref}
+
+% This document is full of things TeX cannot break: \texttt{} spans, six-figure
+% counts with thousands separators, and bracketed confidence intervals in math
+% mode. Six paragraphs ran into the margin, the worst by 24pt. microtype's
+% protrusion and expansion absorb most of it; emergencystretch gives the line
+% breaker a last resort on the rest, which is preferable to hyphenating a
+% coefficient or rewriting a sentence to fit.
+\emergencystretch=2em
 
 \journal{International Journal of Forecasting}
 
@@ -254,10 +273,14 @@ anyone studying the 2025 fee change, because it is essentially the same date.
 
 \begin{table}[htbp]
 \centering
-\caption{Category weights, calendar 2024 against the post-boundary window.}
+\caption{Category weights (shares of in-scope observations), calendar 2024
+against the post-boundary window.}
+% The spelled-out column headings ran 24pt past the margin. The weights are
+% named in the caption, so the headings do not have to repeat the word.
+\small
 \begin{tabular}{lrrr}
 \toprule
-Category & Calendar-2024 weight & Post-boundary weight & Change \\
+Category & Calendar 2024 & Post-boundary & Change \\
 \midrule
 \textbf{Sports}     & \textbf{0.00009} & \textbf{0.5875} & \textbf{$+0.5874$} \\
 Climate \& Weather  & 0.4744 & 0.0995 & $-0.3749$ \\

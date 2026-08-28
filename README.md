@@ -282,8 +282,13 @@ The direction matters. A hand-check starts from the paper and finds a source for
 each claim; it never notices a claim whose source was never there. These start
 from the artifact.
 
-The LaTeX build is **not compile-verified** — no TeX toolchain was available
-where it was written. Run `pdflatex` before trusting it.
+`tools/build_paper_pdf.py` compiles the LaTeX and then checks the **rendered
+PDF** against the artifacts — the same artifact-first direction, one step
+further down the pipeline, because a compiler will happily build a document
+with a wrong number in it. Current build: 20 pages, no errors, no undefined
+references, all fonts vector, 22/22 figure and declaration checks. The
+submission PDF is committed at
+[`reports/final/paper_a_composition.pdf`](reports/final/paper_a_composition.pdf).
 
 ### Running the long fetches
 
