@@ -112,6 +112,65 @@ replication targets are stable and the citation is correct as written; a
 footnote in §8 now records the variant so nobody chasing that number concludes
 they have found a different paper.
 
+## Source audit against the original PDF, 2026-08-28
+
+The replicated paper was re-read in full and every claim both drafts attribute
+to it was checked against the text. The copy supplied matched the January 2026
+version already fetched from karlwhelan.com character for character, so the
+drafts had been built against the right document.
+
+**All 25 numeric and factual attributions hold.** Counts, returns, maker shares,
+the Mincer-Zarnowitz coefficients, all five by-year slopes, the filters and the
+fee formula are exactly as the drafts state them.
+
+**Three passages were presented as quotations that the original does not say.**
+They were paraphrases from this project's spec notes that hardened into
+quotation marks somewhere between the spec and the draft:
+
+| Draft said | The original says |
+|---|---|
+| "total traded volume at closure >= $1,000" | "We focus only on contracts that have reached a total trading volume upon market closure of at least $1,000" |
+| "Last trade before the same time on each of up to 10 prior days" | "the final traded price as the market closed and also, **where available**, previous prices from 24-hour intervals up to 10 days before markets closed" |
+| "some evidence the bias is diminishing" | "there is some evidence that the bias in prices is diminishing over time" |
+
+Two of the three sat in sections whose entire argument is about what the
+original's prose says, which is the worst place to paraphrase inside quotation
+marks, because there the exact words are the evidence. Correcting the second one
+strengthened the argument rather than weakening it: "where available" is a
+plainer statement of the skip reading than our paraphrase was, and the original
+describes the same construction a second time without mentioning gaps at all.
+Paper B now quotes both descriptions and observes that neither settles what
+their own counts settle.
+
+**And the original supplies an objection that neither draft answered.** BDW
+write: "Our results below are not sensitive to cutting the data off in December
+2024 or to excluding the category containing sports bets." Paper A's headline
+result is that sports composition contaminates the aggregate at that boundary,
+so this is the first thing a referee -- or these authors -- would raise, and it
+appeared nowhere in the paper. `CLAUDE.md` Section 1 had anticipated it
+explicitly and told the drafts not to cite their robustness as covering ours;
+the instruction was there and the paragraph was missing.
+
+Paper A Section 4.4 now answers it, and the answer is arithmetic: sports is
+**4.3% of the observations inside their window** against **58.8% after the
+boundary**, a factor of fourteen. Deleting a category worth one observation in
+twenty-three barely moves an estimate, which is what they found; the problem
+arises from the share becoming a majority after their sample ends, so no test
+run inside their window could have detected it.
+
+**What this says about the rubric.** The rubric scored argument quality 9/10 and
+did not find this, because it reviews a paper against itself -- its internal
+logic, its structure, its coverage of its own claims. It cannot know that the
+work being replicated pre-empts the headline result, because it never reads that
+work. A checklist is not a referee, and the gap between them is exactly this
+kind of finding.
+
+`tools/audit_source_quotes.py` now checks that every quoted fragment in both
+drafts is a recorded quotation, with the recorded set in
+`docs/source_quotes.yaml` and an optional `--pdf` mode that re-verifies them
+against the source. The paper itself is not committed: it is someone else's
+work and this repository is public.
+
 ## What was ruled out
 
 **The toolkit's section templates and venue guidance were not applied.** Its

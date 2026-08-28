@@ -1,0 +1,109 @@
+# Verbatim quotations from the replicated paper.
+#
+# Bürgi, C., Deng, W. & Whelan, K., "Makers and Takers: The Economics of the
+# Kalshi Prediction Market", January 2026 version, karlwhelan.com/Papers/Kalshi.pdf
+# (44 pages; the GWU 2026-001 PDF is this document plus a cover sheet).
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# On 2026-08-28 an audit against the source PDF found three passages that both
+# drafts presented inside quotation marks and that the original does not say.
+# They were paraphrases from this project's own spec notes that hardened into
+# quotations somewhere between the spec and the draft. Two of them sat in
+# sections whose whole argument is about what the original's prose says, which
+# is the worst possible place to paraphrase inside quotation marks.
+#
+# Only the fragments actually quoted are recorded, not the paper: it is someone
+# else's work and this repository is public.
+#
+# tools/audit_source_quotes.py checks that every quoted fragment in both drafts
+# appears here, and can re-verify this file against the PDF when one is at hand:
+#     python tools/audit_source_quotes.py --pdf path/to/Kalshi.pdf
+
+source:
+  authors: Bürgi, Deng and Whelan
+  version: January 2026
+  pages: 44
+  sha_note: >-
+    Text extracted from karlwhelan.com/Papers/Kalshi.pdf matched the user-supplied
+    copy character for character on 2026-08-28 (75,171 characters).
+
+quotes:
+  - id: section6_invitation
+    text: now that they have been publicly documented
+    where: Section 6, the invitation this project answers
+    used_in: [paper_a]
+
+  - id: volume_filter
+    text: >-
+      We focus only on contracts that have reached a total trading volume upon
+      market closure of at least $1,000
+    where: Section 3.1, data construction
+    used_in: [paper_a, paper_b]
+    note: >-
+      The dollar sign is what makes this read as notional. Kalshi's `volume`
+      field counts contracts. Earlier drafts rendered this as "total traded
+      volume at closure >= $1,000", which the original does not say.
+
+  - id: lookback_panel
+    text: >-
+      the final traded price as the market closed and also, where available,
+      previous prices from 24-hour intervals up to 10 days before markets closed
+    where: Introduction
+    used_in: [paper_a, paper_b]
+    note: >-
+      "where available" is the phrase that reads as skipping empty days, and it
+      is the reason the ambiguity is genuine rather than invented. Earlier
+      drafts rendered this as "last trade before the same time on each of up to
+      10 prior days", which the original does not say.
+
+  - id: lookback_panel_second
+    text: >-
+      Going from final trades on the day a market closed back in 24-hour
+      intervals to ten days before closing
+    where: Section 3.1
+    used_in: [paper_b]
+    note: >-
+      The paper describes the same construction twice. This second description
+      is silent on gaps, where the first says "where available". Neither settles
+      the question their own counts settle.
+
+  - id: bias_diminishing
+    text: >-
+      there is some evidence that the bias in prices is diminishing over time
+    where: Abstract / Section 4
+    used_in: [paper_b]
+    note: >-
+      Earlier drafts compressed this to "some evidence the bias is diminishing"
+      inside quotation marks.
+
+  - id: sports_robustness
+    text: >-
+      Our results below are not sensitive to cutting the data off in December
+      2024 or to excluding the category containing sports bets.
+    where: Section 3.1
+    used_in: [paper_a]
+    note: >-
+      The objection the original itself supplies against Paper A's composition
+      result. Answered in Paper A Section 4.4: sports is 4.3% of observations
+      inside their window against 58.8% after the boundary.
+
+  - id: spread_filter
+    text: we drop contracts where the final bid–ask spread is larger than 20c
+    where: Section 3.1
+    used_in: []
+    note: >-
+      Not quoted in either draft, recorded because the papers describe the
+      filter in their own words and this pins what is being described. Larger
+      than 20c is dropped, so 20c itself is kept -- which is what our
+      implementation does.
+
+# Quoted strings in the drafts that are NOT from this source. The audit tool
+# needs these or it reports them as unverifiable.
+exempt:
+  - fragment: "unless they are included in our 'Maker Fees' section"
+    source: Kalshi's own published fee schedule, archived in docs/sources/fees/
+  - fragment: "Makers *or* Takers"
+    source: the GWU 2026-001 series cover sheet
+  - fragment: "Makers *and* Takers"
+    source: the paper's own title page

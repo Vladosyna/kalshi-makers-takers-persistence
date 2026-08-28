@@ -145,17 +145,17 @@ Three construction choices are stated because each silently changes the sample,
 and because the second is a correction to the natural reading of the prior
 literature.
 
-**Volume is denominated in contracts, not dollars.** The phrase "total traded
-volume at closure ≥ $1,000" reads as notional, but Kalshi's `volume` field
-counts contracts and the API exposes no notional field. At the contract reading
+**Volume is denominated in contracts, not dollars.** The original screens on
+"We focus only on contracts that have reached a total trading volume upon market closure of at least $1,000", which reads as dollar notional, but Kalshi's `volume` field counts
+contracts and the API exposes no notional field. At the contract reading
 our independently collected universe lands within 0.1% of the published event
 count; the dollar reading roughly halves the sample. Since a sample rule that
 differentially removes cheap strikes is itself a result in a paper about the
 favorite–longshot bias, both are computed and the contract reading is primary.
 
-**Prices are carried forward on no-trade lookback days.** "Last trade before the
-same time on each of up to 10 prior days" reads as skipping empty days, but the
-published counts settle it: 156,986 prices over 46,282 contracts is 3.39 per
+**Prices are carried forward on no-trade lookback days.** The original collects
+"the final traded price as the market closed and also, where available, previous prices from 24-hour intervals up to 10 days before markets closed" — and "where available" reads as skipping empty days. The published
+counts settle it the other way: 156,986 prices over 46,282 contracts is 3.39 per
 contract, which skipping cannot reach. On our tape, skipping yields 2.50 and
 carrying forward yields 3.50. Carrying forward is primary.
 
@@ -274,6 +274,19 @@ to invert the economic reading rather than merely attenuate it: the naive
 aggregate says a fee levied on liquidity providers made the market *less*
 efficiently priced, which is not a mechanism anyone would defend if it were
 stated aloud.
+
+**The original's own robustness check does not reach this.** BDW anticipate the
+category question and report that "Our results below are not sensitive to cutting the data off in December 2024 or to excluding the category containing sports bets." That check is correct on their
+sample and does not cover ours, for a reason that is arithmetic rather than
+methodological: sports is **4.3% of the observations inside their window** and
+**58.8% after the boundary**, a factor of fourteen. Dropping a category worth
+one observation in twenty-three barely moves an estimate, which is what they
+found. The problem we identify is created by the share rising to a majority
+*after* their sample ends, so no test run inside their window could have
+detected it. Their check also asks a different question — whether a level
+estimate survives deleting a category — where ours asks how much of a *change
+across a boundary* is reweighting. Deleting sports and holding the mix fixed
+are not the same operation.
 
 **The trap is live, not hypothetical.** Kalshi is being analysed now, and the
 samples in circulation straddle exactly this boundary — Becker (2026) covers

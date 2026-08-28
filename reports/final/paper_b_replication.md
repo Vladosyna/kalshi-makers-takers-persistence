@@ -115,8 +115,8 @@ prior days, in US Eastern Time.
 
 ### 3.1 Volume: contracts, not dollars
 
-BDW write "total traded volume at closure ≥ $1,000", which reads as dollar
-notional. Kalshi's `volume` field is denominated in **contracts**, and the API
+BDW write: "We focus only on contracts that have reached a total trading volume upon market closure of at least $1,000 to ensure there was a meaningful level of market activity."
+That reads as dollar notional. Kalshi's `volume` field is denominated in **contracts**, and the API
 exposes no notional field. Because a contract settles at $1, the two are easy to
 conflate in prose and are not remotely equivalent in data.
 
@@ -132,8 +132,10 @@ cheap strikes is itself a finding in a paper about the favorite–longshot bias.
 
 ### 3.2 No-trade lookback days: carry forward, not skip
 
-"Last trade before the same time on each of up to 10 prior days" reads naturally
-as skipping days with no trade. The paper's counts say otherwise: 156,986 prices
+The paper describes this construction twice, and neither description settles it.
+The introduction collects "the final traded price as the market closed and also, where available, previous prices from 24-hour intervals up to 10 days before markets closed"; Section 3.1 has "Going from final trades on the day a market closed back in 24-hour intervals to ten days before closing". The phrase
+"where available" reads naturally as skipping days with no trade, and the second
+description is silent on gaps altogether. The paper's counts say otherwise: 156,986 prices
 over 46,282 contracts is 3.39 prices per contract, which skipping cannot reach.
 
 Measured on our tape, with no refetching, skipping gives 2.50 prices per
@@ -202,8 +204,8 @@ in advance: *confirmed* requires counts to reconcile within documented coverage
 gaps and the sign and significance pattern to reproduce, and does not require
 magnitudes to coincide.
 
-The original's own reading of this table — "some evidence the bias is
-diminishing" — is a comparison across windows rather than a formal test. Our
+The original's own reading — that "there is some evidence that the bias in prices is diminishing over time" — is a comparison across
+windows rather than a formal test. Our
 companion paper replaces it with an interaction test on a pooled panel.
 
 ### 5.2 The bias itself (their Figure 3)
