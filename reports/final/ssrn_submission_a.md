@@ -21,22 +21,45 @@ Prediction markets are now studied intensively enough that their own growth has 
 prediction markets; favorite-longshot bias; composition effects;
 difference-in-differences; transaction fees; market microstructure; Kalshi
 
-## JEL classification
+## SSRN classifications
+
+Read off SSRN's live taxonomy on 2026-08-28 (the FEN and ERN eJournal offering
+pages), not reconstructed from memory. Two constraints from SSRN's own
+documentation shape the choice:
+
+- **At least one, at most seven.**
+- **They cannot be changed after posting** — SSRN will not add or remove
+  classifications on an existing submission. So this is a one-shot decision, and
+  the cost of a marginal pick is only dilution, never a lost chance to fix it.
+
+Seven, ranked by fit. The first two are where the paper actually lives; the rest
+buy reach into audiences that would not otherwise see it.
+
+| # | Network | Classification |
+|---|---|---|
+| 1 | FEN | **Capital Markets: Market Efficiency** — the favorite–longshot bias is a market-efficiency finding, and the persistence question is the efficiency question |
+| 2 | FEN | **Capital Markets: Market Microstructure** — maker/taker structure, the per-series fee schedule, the exploitable margin |
+| 3 | ERN | **Econometric Modeling: Capital Markets – Forecasting** → topic *ERN: Forecasting Techniques* — contract prices as forecasts and their calibration; also the closest audience to the target journal |
+| 4 | ERN | **Econometrics: Multiple Equation Models** → topic *ERN: Cross-Sectional Models, Spatial Models, Treatment Effect Models (Multiple)* — the staggered difference-in-differences and the event study, which is the paper's methodological contribution |
+| 5 | FEN | **Behavioral & Experimental Finance** — the favorite–longshot literature this paper takes as established |
+| 6 | ERN | **Econometrics: Data Collection & Data Estimation Methodology** → topic *ERN: Collecting, Estimating, & Organizing Microeconomic Data* — a 376.8M-fill tape rebuilt from a public API and a fee schedule reconstructed from sixteen dated primary captures |
+| 7 | FEN | **Derivatives** — Kalshi event contracts are CFTC-regulated binary derivatives, consistent with the paper's own G13 |
+
+**Deliberately not chosen.** *Cryptocurrency Research* (the paper is not about
+crypto, and the hourly-reset crypto series are excluded by the duration filter);
+*ERN: Behavioral Economics (Topic)*, which duplicates entry 5 on the economics
+side; *Econometric Modeling: Financial Markets Regulation*, since the fee
+schedule is an input here rather than the object of study; and
+*Econometrics: Panel Data Models*, which entry 4 already covers and which would
+spend a slot describing the estimator's data shape rather than its identifying
+strategy.
+
+## JEL classification (separate from the above)
 
 G14 (Information and Market Efficiency; Event Studies) — primary
 G13 (Contingent Pricing; Futures Pricing)
 D47 (Market Design)
 C52 (Model Evaluation, Validation, and Selection)
-
-## Networks / subject areas
-
-Pick these in SSRN's own classification tree rather than from this list — the
-eJournal names change and only the live tree is authoritative. The four areas
-the paper belongs to are: **econometric methods** (the DiD and event study),
-**market microstructure** (maker/taker structure and fees), **information and
-market efficiency** (the bias itself), and **behavioral/experimental economics**
-(the favorite–longshot bias literature). Match each to the nearest available
-network.
 
 ## Files to upload
 
