@@ -61,6 +61,52 @@ G13 (Contingent Pricing; Futures Pricing)
 D47 (Market Design)
 C52 (Model Evaluation, Validation, and Selection)
 
+## Licence
+
+**CC BY-NC-ND.**
+
+Elsevier's preprint policy permits sharing "anywhere at any time" and imposes no
+licence requirement on preprints -- its CC BY-NC-ND requirement applies to the
+*accepted manuscript* after peer review. There is no funder mandate here, so
+nothing forces CC BY.
+
+CC BY-NC-ND is chosen because it is the licence Elsevier itself asks for on the
+accepted manuscript, so the preprint and the eventual journal version do not
+conflict on terms; because ND protects labels that are load-bearing in this
+paper (the event-study result is marked exploratory, and a derivative that
+stripped that label would misrepresent it); and because NC keeps commercial
+reuse under the author's control in a paper that documents an exploitable
+trading margin.
+
+Rejected: **CC BY**, which permits commercial derivatives with no funder
+requiring it, and which publishers sometimes object to on preprints;
+**CC0**, which waives attribution entirely and works against the author in a
+project with a stated concern about being scooped; and **all rights reserved**,
+which is safest but makes the preprint non-redistributable, losing reach for no
+gain.
+
+CC licences are irrevocable, but non-exclusive: copyright stays with the author,
+who remains free to grant a publisher whatever rights the published version
+needs. The preprint stays CC BY-NC-ND; the journal version gets its own terms.
+
+**Unverified, and worth checking by hand.** Elsevier's policy notes that
+society-owned titles and double-anonymised journals may have different preprint
+policies and says to check the journal's Guide for Authors. IJF is published for
+the International Institute of Forecasters, so it falls in that category.
+ScienceDirect blocked both an automated fetch (403) and a browser session
+(Cloudflare), so IJF's own preprint policy was never read. Check it in the same
+pass as the abstract word limit, which is open for the same reason.
+
+## Funder statement
+
+> This research did not receive any specific grant from funding agencies in the
+> public, commercial, or not-for-profit sectors.
+
+The standard Elsevier phrasing for unfunded work, used verbatim so that SSRN's
+field and the eventual journal submission do not diverge. It must also stay
+consistent with the manuscript's own Declaration of interest, which already
+states that no funding was received.
+
 ## Files to upload
 
 - The manuscript as PDF. SSRN accepts PDF; the Elsevier LaTeX build is for the
