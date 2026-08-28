@@ -7,8 +7,8 @@ from kalshi_mt.r1.panel import (
     build_yes_only_panel_backfilled,
     price_band,
 )
-from kalshi_mt.store.parquet import TradeStore
 from kalshi_mt.store import db
+from kalshi_mt.store.parquet import TradeStore
 
 
 def _seed_market_with_panel(conn, ticker, *, result="yes", category="Weather",

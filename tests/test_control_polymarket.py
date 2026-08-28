@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import polars as pl
 import pytest
@@ -8,7 +8,6 @@ import pytest
 from kalshi_mt.control.polymarket import (
     CONTROL_END,
     CONTROL_START,
-    MonthlyPsiResult,
     _detect_column,
     _outcome_to_float,
     _parse_outcome_prices_first,
@@ -20,7 +19,7 @@ from kalshi_mt.control.polymarket import (
 
 
 def _epoch(y, m, d=1, hh=0):
-    return int(datetime(y, m, d, hh, tzinfo=timezone.utc).timestamp())
+    return int(datetime(y, m, d, hh, tzinfo=UTC).timestamp())
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +288,8 @@ def test_build_polymarket_panel_prefilters_by_date_with_native_datetime_column(t
         "condition_id": ["IN-WINDOW", "OUT-OF-WINDOW"],
         "outcome": ["yes", "yes"],
         "end_date": [
-            datetime(2025, 6, 15, tzinfo=timezone.utc),
-            datetime(2026, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 6, 15, tzinfo=UTC),
+            datetime(2026, 3, 1, tzinfo=UTC),
         ],
     }).write_parquet(markets_path)
     pl.DataFrame({
@@ -343,6 +342,7 @@ def _panel_row(ticker, close_epoch, p, y, category="Weather"):
 
 def test_monthly_psi_path_produces_one_result_per_month_in_window():
     import numpy as np
+
     from kalshi_mt.r1.panel import PANEL_SCHEMA
 
     rng = np.random.default_rng(0)

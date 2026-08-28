@@ -55,7 +55,7 @@ clean-controls estimate is the one to believe.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -123,7 +123,7 @@ def treated_flags(
     def charged(series_ticker: str | None, epoch: int | None) -> bool:
         if series_ticker is None or epoch is None:
             return False
-        as_of = datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d")
+        as_of = datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%d")
         key = (series_ticker, as_of)
         if key not in cache:
             try:
@@ -133,8 +133,8 @@ def treated_flags(
                 cache[key] = False
         return cache[key]
 
-    now = np.array([charged(s, e) for s, e in zip(series, close_epoch)], dtype=float)
-    treated_series = {s for s, flag in zip(series, now) if flag and s is not None}
+    now = np.array([charged(s, e) for s, e in zip(series, close_epoch, strict=True)], dtype=float)
+    treated_series = {s for s, flag in zip(series, now, strict=True) if flag and s is not None}
     ever = np.array([1.0 if s in treated_series else 0.0 for s in series], dtype=float)
     return now, ever
 
@@ -142,7 +142,7 @@ def treated_flags(
 def _month_index(close_epoch: np.ndarray) -> np.ndarray:
     """Calendar-month label per row, as YYYYMM integers."""
     return np.array([
-        int(datetime.fromtimestamp(int(e), tz=timezone.utc).strftime("%Y%m")) for e in close_epoch
+        int(datetime.fromtimestamp(int(e), tz=UTC).strftime("%Y%m")) for e in close_epoch
     ])
 
 
@@ -236,7 +236,7 @@ def fit_did(
         ci_lo, ci_hi = delta - 1.96 * delta_se, delta + 1.96 * delta_se
 
     treated_series = {
-        s for s, flag in zip(panel["series_ticker"].to_list(), now) if flag and s is not None
+        s for s, flag in zip(panel["series_ticker"].to_list(), now, strict=True) if flag and s is not None
     }
     return DidResult(
         delta_did=delta,
@@ -334,7 +334,7 @@ def _ordinal_month(close_epoch: np.ndarray) -> np.ndarray:
     cannot be subtracted -- 202601 minus 202512 is 89, not 1."""
     return np.array([
         (lambda d: d.year * 12 + (d.month - 1))(
-            datetime.fromtimestamp(int(e), tz=timezone.utc)
+            datetime.fromtimestamp(int(e), tz=UTC)
         )
         for e in close_epoch
     ])
@@ -393,7 +393,7 @@ def fit_event_study(
     # observed treated has none, and stays a pure control contributing only to
     # the common calendar path.
     first_treated: dict[str, int] = {}
-    for s, m, t in zip(series, om, now):
+    for s, m, t in zip(series, om, now, strict=True):
         if t and (s not in first_treated or m < first_treated[s]):
             first_treated[s] = m
     if not first_treated:
@@ -403,7 +403,7 @@ def fit_event_study(
     NEVER = np.iinfo(np.int64).min
     k = np.array([
         (m - first_treated[s]) if s in first_treated else NEVER
-        for s, m in zip(series, om)
+        for s, m in zip(series, om, strict=True)
     ])
     k_binned = np.where(k == NEVER, NEVER, np.clip(k, -leads, lags))
 

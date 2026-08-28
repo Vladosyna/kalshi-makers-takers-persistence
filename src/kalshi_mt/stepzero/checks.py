@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import httpx
@@ -47,7 +47,7 @@ class CheckResult:
 
 
 def _epoch(y: int, m: int, d: int = 1) -> int:
-    return int(datetime(y, m, d, tzinfo=timezone.utc).timestamp())
+    return int(datetime(y, m, d, tzinfo=UTC).timestamp())
 
 
 def _is_auth_error(exc: BaseException) -> bool:

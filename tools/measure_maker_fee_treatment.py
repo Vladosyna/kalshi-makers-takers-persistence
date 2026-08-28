@@ -20,21 +20,19 @@ Usage:
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from kalshi_mt.fees.schedule import FeeScheduleGapError, entry_for, load_fee_schedule  # noqa: E402
 from kalshi_mt.store.db import connect_read_only  # noqa: E402
-from kalshi_mt.util import load_config  # noqa: E402
 
 SCOPE = "volume_fp >= 1000 AND (close_time_epoch - open_time_epoch) >= 86400"
 
 
 def main() -> int:
     schedule = load_fee_schedule()
-    config = load_config()
     conn = connect_read_only()
     try:
         rows = conn.execute(
@@ -61,7 +59,7 @@ def main() -> int:
     by_month: dict[str, list[float]] = {}
     treated_series: set[str] = set()
     for series, epoch, volume in rows:
-        dt = datetime.fromtimestamp(epoch, tz=timezone.utc)
+        dt = datetime.fromtimestamp(epoch, tz=UTC)
         month = dt.strftime("%Y-%m")
         hit = charged(series, dt.strftime("%Y-%m-%d"))
         if hit:

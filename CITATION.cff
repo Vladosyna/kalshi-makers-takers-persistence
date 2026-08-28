@@ -1,0 +1,66 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software or its data artifacts, please cite the repository.
+  If you use the findings, cite the paper listed under preferred-citation.
+title: >-
+  kalshi-makers-takers-persistence: replication and persistence analysis of the
+  Kalshi prediction market
+abstract: >-
+  A read-only research instrument that reproduces Bürgi, Deng and Whelan's
+  analysis of the Kalshi prediction market over their own window (2021 to April
+  2025) from independently collected public API data, then extends it past two
+  dated treatments they could not observe: the maker fee and the paper's own
+  publication. Ships a machine-readable reconstruction of Kalshi's fee schedule
+  from sixteen dated captures of the exchange's published document, a versioned
+  category mapping, and an analysis plan committed before any extension estimate
+  was computed.
+type: software
+authors:
+  - family-names: Yurchyna
+    given-names: Vladyslav
+    email: vlad.yurchina@outlook.com
+    affiliation: Independent Researcher
+repository-code: https://github.com/Vladosyna/kalshi-makers-takers-persistence
+license: MIT
+version: 0.1.0
+date-released: 2026-08-28
+keywords:
+  - prediction markets
+  - favorite-longshot bias
+  - replication
+  - difference-in-differences
+  - composition effects
+  - market microstructure
+  - Kalshi
+
+preferred-citation:
+  type: unpublished
+  title: >-
+    Composition Shift and the Measurement of Bias in a Growing Prediction
+    Market: Evidence from Kalshi, 2021-2026
+  authors:
+    - family-names: Yurchyna
+      given-names: Vladyslav
+      affiliation: Independent Researcher
+  year: 2026
+  notes: >-
+    Working paper. Update this block with the DOI or outlet once it is posted or
+    accepted; the companion replication (paper_b_replication.md) is held until
+    the replicated study is published.
+
+references:
+  - type: unpublished
+    title: >-
+      Makers and Takers: The Economics of the Kalshi Prediction Market
+    authors:
+      - family-names: Bürgi
+        given-names: Constantin
+      - family-names: Deng
+        given-names: Wanying
+      - family-names: Whelan
+        given-names: Karl
+    year: 2026
+    notes: >-
+      The replicated study. January 2026 version. CEPR Discussion Paper 20631;
+      CESifo Working Paper 12122; UCD Working Paper WP2025_19; GWU Working Paper
+      2026-001; MPRA Paper 126350. Still a working paper as of 2026-08-28.

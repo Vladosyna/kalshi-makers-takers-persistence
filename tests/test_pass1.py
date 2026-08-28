@@ -7,16 +7,22 @@ pytest-asyncio is not a project dependency (matches tests/test_stepzero.py).
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from kalshi_mt.api.kalshi import KalshiCandlestick, KalshiEvent, KalshiMarket, KalshiSeries, KalshiTrade
+from kalshi_mt.api.kalshi import (
+    KalshiCandlestick,
+    KalshiEvent,
+    KalshiMarket,
+    KalshiSeries,
+    KalshiTrade,
+)
 from kalshi_mt.fetch import pass1
 from kalshi_mt.store import db
 from kalshi_mt.util import ET, epoch_to_et, et_to_epoch
 
 
 def _iso(epoch: int) -> str:
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat().replace("+00:00", "Z")
 
 
 def _market(ticker: str, close_epoch: int, event_ticker: str = "EVT-1", status: str = "closed", result: str = "") -> KalshiMarket:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC
 
 from kalshi_mt.api.kalshi import KalshiTrade
 from kalshi_mt.fetch import pass2
@@ -11,8 +12,8 @@ from kalshi_mt.store.parquet import TradeStore
 
 
 def _iso(epoch: int) -> str:
-    from datetime import datetime, timezone
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    from datetime import datetime
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat().replace("+00:00", "Z")
 
 
 def _seed_market(conn, ticker, *, volume_fp=2000.0, spread=0.05, open_epoch=0,

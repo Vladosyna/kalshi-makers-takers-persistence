@@ -45,7 +45,7 @@ Usage:
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -120,7 +120,7 @@ def main() -> int:
         """).fetchall()
         by_month: dict[str, list[int]] = {}
         for series, epoch in rows:
-            dt = datetime.fromtimestamp(epoch, tz=timezone.utc)
+            dt = datetime.fromtimestamp(epoch, tz=UTC)
             acc = by_month.setdefault(dt.strftime("%Y-%m"), [0, 0])
             acc[0] += 1
             if charged(series, dt.strftime("%Y-%m-%d")):

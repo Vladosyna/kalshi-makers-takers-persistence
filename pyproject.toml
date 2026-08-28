@@ -28,6 +28,17 @@ kmt = "kalshi_mt.cli:app"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    # Reads the archived Kalshi fee-schedule PDFs (tools/fetch_fee_schedule_history.py)
+    # and re-verifies the source quotations against the replicated paper
+    # (tools/audit_source_quotes.py --pdf).
+    #
+    # This was deliberately NOT a dependency while collection was running: adding
+    # one forces a `uv sync`, and that cannot run while a collector process holds
+    # .venv/Scripts/kmt.exe open. Collection finished 2026-08-25, so the reason
+    # expired; leaving it undeclared after that only meant the tools worked on
+    # whichever interpreter happened to have it and failed on the project's own.
+    "pypdf>=4.0",
+    "ruff>=0.6",
 ]
 
 [build-system]
@@ -39,3 +50,32 @@ packages = ["src/kalshi_mt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tools", "tests"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, comprehensions, pyupgrade. Deliberately
+# not the whole catalogue: this is a research codebase whose comments carry the
+# reasoning, and a linter that starts rewriting them earns nothing.
+select = ["E", "F", "I", "B", "C4", "UP"]
+ignore = [
+    "E501",  # line length is checked by the formatter's judgement, not hard-failed
+    "B008",  # typer uses function calls in argument defaults by design
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tools bootstrap sys.path before importing the package, so their imports
+# legitimately sit below executable code.
+"tools/*.py" = ["E402"]
+# A pytest fixture imported at module scope and then named as a test argument
+# is the framework's own idiom, not a redefinition. B905 is waived here because
+# test fixtures build their own paired sequences; in src/ it is enforced.
+# E731: a one-line lambda standing in for a fee function reads better inline
+# than a def, and these tests are full of them by design.
+# F841: an assignment kept only to carry a worked example in its comment.
+# C408: `dict(a=1, b=2)` built to be splatted into a keyword call is clearer
+# than a literal whose keys are all identifiers.
+"tests/*.py" = ["F811", "B905", "E731", "F841", "C408"]

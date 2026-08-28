@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC
+
 import polars as pl
 
 from kalshi_mt.r1.panel import PANEL_SCHEMA
@@ -9,13 +11,12 @@ from kalshi_mt.r1.reproduction import (
     maker_taker_split,
     returns_by_band,
     win_rate_by_band,
-    write_divergence_log,
 )
 
 
 def _epoch(year, month=6, day=1):
-    from datetime import datetime, timezone
-    return int(datetime(year, month, day, tzinfo=timezone.utc).timestamp())
+    from datetime import datetime
+    return int(datetime(year, month, day, tzinfo=UTC).timestamp())
 
 
 def _panel_row(ticker, event, p, y, *, lookback_day=0, category="Weather", close_epoch=None,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import polars as pl
@@ -17,7 +17,7 @@ from kalshi_mt.r2.regression import BoundaryCoefficients, CategoryR2Result
 
 
 def _epoch(y, m=1, d=1):
-    return int(datetime(y, m, d, tzinfo=timezone.utc).timestamp())
+    return int(datetime(y, m, d, tzinfo=UTC).timestamp())
 
 
 BEFORE_FEE = _epoch(2025, 1)

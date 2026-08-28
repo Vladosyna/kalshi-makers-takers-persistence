@@ -1,0 +1,65 @@
+name: CI
+
+# Everything here runs offline. No Kalshi endpoint is touched, no credentials
+# exist, and no fetch is triggered: the tests use fixtures and the manuscript
+# checks read committed artifacts. Collection is a local, long-running operation
+# and deliberately has no CI path.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Tests
+        run: uv run pytest -q
+
+      # The three checks below guard the manuscripts rather than the code, and
+      # each exists because something got past a human read.
+      - name: Manuscript figures match the artifacts
+        # Caught a headline sample size (392,597) that no artifact supported,
+        # and a stale escalation verdict left over from a superseded rule.
+        run: uv run python tools/verify_paper_figures.py
+
+      - name: Quoted text is actually quoted
+        # Caught three passages presented as quotations that the replicated
+        # paper does not say. Runs without the PDF; pass --pdf locally to
+        # re-verify the recorded quotations against the source.
+        run: uv run python tools/audit_source_quotes.py
+
+      - name: LaTeX build is structurally sound
+        # Not a compile -- it checks environments, braces, citations, refs,
+        # escaping, table shapes, and that every figure in the Markdown reached
+        # the .tex. A compiler would happily build a document with a wrong
+        # number in it.
+        run: uv run python tools/lint_tex.py
+
+      - name: Documentation links resolve
+        # Case included: this repo is developed on a case-insensitive
+        # filesystem and served from a case-sensitive one, so `Claude.md` for
+        # `CLAUDE.md` opens locally and 404s for every reader. Five such links
+        # sat in the README until 2026-08-28.
+        run: uv run python tools/check_doc_links.py
+
+      - name: R3 firewall
+        # Fails the build if any r3 import appears outside src/kalshi_mt/r3/.
+        # R2's verdict must be locked before any R3 number is looked at, and a
+        # stray import is how that ordering quietly stops being true.
+        run: uv run python -m pytest tests/test_r3_firewall.py -q

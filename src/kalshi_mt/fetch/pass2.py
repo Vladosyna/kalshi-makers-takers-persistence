@@ -26,7 +26,6 @@ from typing import Any
 from kalshi_mt.api.kalshi import KalshiClient, KalshiTrade
 from kalshi_mt.store import db
 from kalshi_mt.store.parquet import TradeStore
-from kalshi_mt.util import now_utc_iso
 
 log = logging.getLogger(__name__)
 
@@ -217,7 +216,7 @@ async def run_pass2(
     raw_results = await asyncio.gather(*[_fetch_one(t) for t in tickers], return_exceptions=True)
     results = []
     tickers_failed = 0
-    for ticker, r in zip(tickers, raw_results):
+    for ticker, r in zip(tickers, raw_results, strict=True):
         if isinstance(r, BaseException):
             tickers_failed += 1
             log.warning("full-tape fetch failed for %s: %r", ticker, r)

@@ -63,8 +63,10 @@ def main() -> int:
             f"{r['month']:<9} {r['eligible']:>9,} {r['quoted']:>9,} "
             f"{r['in_scope']:>9,} {r['analysable']:>11,}{marker}"
         )
-        totals[0] += r["eligible"]; totals[1] += r["quoted"]
-        totals[2] += r["in_scope"]; totals[3] += r["analysable"]
+        totals[0] += r["eligible"]
+        totals[1] += r["quoted"]
+        totals[2] += r["in_scope"]
+        totals[3] += r["analysable"]
     print("-" * 68)
     print(f"{'TOTAL':<9} {totals[0]:>9,} {totals[1]:>9,} {totals[2]:>9,} {totals[3]:>11,}")
 

@@ -21,9 +21,7 @@ Usage:
 
 from __future__ import annotations
 
-import io
 import re
-import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -180,9 +178,9 @@ def main() -> int:
     if not TEX.exists():
         print(f"no such file: {TEX}")
         return 1
-    with io.open(TEX, encoding="utf-8") as f:
+    with open(TEX, encoding="utf-8") as f:
         raw = f.read()
-    with io.open(MD, encoding="utf-8") as f:
+    with open(MD, encoding="utf-8") as f:
         md = f.read()
     src = strip_comments(raw)
 

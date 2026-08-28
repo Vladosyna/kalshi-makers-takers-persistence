@@ -8,7 +8,7 @@ import logging
 import logging.handlers
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -101,7 +101,7 @@ def keep_system_awake(reason: str = "kalshi-mt collection"):
 
 def epoch_to_et(epoch: int) -> datetime:
     """A Unix epoch second as an ET-aware datetime."""
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).astimezone(ET)
+    return datetime.fromtimestamp(epoch, tz=UTC).astimezone(ET)
 
 
 def et_to_epoch(dt_et: datetime) -> int:
@@ -152,7 +152,7 @@ def use_stable_event_loop() -> None:
 
 def now_utc() -> datetime:
     """The only clock call allowed in this codebase."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def now_utc_iso() -> str:
@@ -177,7 +177,7 @@ class JsonLinesFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         entry = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(
+            "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(
                 timespec="milliseconds"
             ),
             "level": record.levelname,

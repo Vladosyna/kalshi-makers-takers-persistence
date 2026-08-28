@@ -13,7 +13,7 @@ pinned to a number.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +35,7 @@ BDW_PSI_BY_YEAR: dict[str, float] = {
 def _year_label(close_time_epoch: int | None) -> str | None:
     if close_time_epoch is None:
         return None
-    return str(datetime.fromtimestamp(close_time_epoch, tz=timezone.utc).year)
+    return str(datetime.fromtimestamp(close_time_epoch, tz=UTC).year)
 
 
 def _verdict(fit: MZResult, bdw_psi: float) -> str:
@@ -126,7 +126,7 @@ def returns_by_band(yes_only: pl.DataFrame, fee_schedule: dict[str, Any]) -> dic
             if p <= 0:
                 continue
             gross.append((payout - p) / p)
-            as_of = datetime.fromtimestamp(row["close_time_epoch"], tz=timezone.utc).isoformat()
+            as_of = datetime.fromtimestamp(row["close_time_epoch"], tz=UTC).isoformat()
             # ACTUAL order size, never a hardcoded 1 (spec S1: "compute fees on
             # actual per-order contract counts", with BDW's own C=100 line
             # reproduced separately by fee_usd_bdw_illustration). The fee rounds
@@ -232,7 +232,7 @@ def maker_taker_split(
         if count is None or count <= 0:
             gap_excluded += 1
             continue
-        as_of = datetime.fromtimestamp(row["close_time_epoch"], tz=timezone.utc).isoformat()
+        as_of = datetime.fromtimestamp(row["close_time_epoch"], tz=UTC).isoformat()
         try:
             order_fee = fee_usd_for(
                 fee_schedule, "taker", count, price, as_of, market_ticker=row["ticker"]

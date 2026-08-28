@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import polars as pl
 
@@ -31,7 +31,7 @@ def _schedule():
 
 
 def _epoch(y: int, m: int, d: int) -> int:
-    return int(datetime(y, m, d, tzinfo=timezone.utc).timestamp())
+    return int(datetime(y, m, d, tzinfo=UTC).timestamp())
 
 
 def _rows(series: str, close_epoch: int, prices: list[float], outcomes: list[float], tag: str):

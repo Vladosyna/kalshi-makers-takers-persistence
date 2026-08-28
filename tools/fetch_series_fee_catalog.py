@@ -32,7 +32,7 @@ import argparse
 import json
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -44,7 +44,7 @@ SPACING_S = 0.35
 
 
 def fetch() -> dict:
-    frozen_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    frozen_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     series: dict[str, dict] = {}
     with httpx.Client(timeout=60, follow_redirects=True) as client:
         resp = client.get(f"{BASE}/series")

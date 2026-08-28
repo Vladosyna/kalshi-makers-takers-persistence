@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 from kalshi_mt.r1.panel import build_doubled_panel, build_yes_only_panel
@@ -75,6 +77,7 @@ def test_reconcile_counts_distinct_events_not_contracts(tmp_path):
 def test_reconcile_counts_empty_panel(tmp_path):
     conn = db.connect(tmp_path / "t.db")
     import polars as pl
+
     from kalshi_mt.r1.panel import PANEL_SCHEMA
     empty = pl.DataFrame(schema=PANEL_SCHEMA)
     result = reconcile_counts(conn, empty, empty)
@@ -129,13 +132,13 @@ def test_coverage_gap_breakdown_respects_window(tmp_path):
 # ---------------------------------------------------------------------------
 
 def _epoch_2024(month=6):
-    from datetime import datetime, timezone
-    return int(datetime(2024, month, 1, tzinfo=timezone.utc).timestamp())
+    from datetime import datetime
+    return int(datetime(2024, month, 1, tzinfo=UTC).timestamp())
 
 
 def _epoch_2023():
-    from datetime import datetime, timezone
-    return int(datetime(2023, 6, 1, tzinfo=timezone.utc).timestamp())
+    from datetime import datetime
+    return int(datetime(2023, 6, 1, tzinfo=UTC).timestamp())
 
 
 def test_compute_calendar_2024_mix_basic(tmp_path):
@@ -170,6 +173,7 @@ def test_compute_calendar_2024_mix_dedups_by_ticker_not_price_rows(tmp_path):
 
 def test_compute_calendar_2024_mix_empty_input():
     import polars as pl
+
     from kalshi_mt.r1.panel import PANEL_SCHEMA
     assert compute_calendar_2024_mix(pl.DataFrame(schema=PANEL_SCHEMA)) == {}
 

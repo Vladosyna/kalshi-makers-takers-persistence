@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from typer.testing import CliRunner
@@ -11,7 +11,7 @@ from kalshi_mt.store.parquet import TradeStore
 
 
 def _epoch(y, m=1, d=1):
-    return int(datetime(y, m, d, tzinfo=timezone.utc).timestamp())
+    return int(datetime(y, m, d, tzinfo=UTC).timestamp())
 
 
 def _seed_r1_market(conn, ticker, category, close_epoch, price, result, *, trade_store=None):
@@ -30,7 +30,7 @@ def _seed_r1_market(conn, ticker, category, close_epoch, price, result, *, trade
     })
     conn.commit()
     if trade_store is not None:
-        created = datetime.fromtimestamp(close_epoch - 3600, tz=timezone.utc)
+        created = datetime.fromtimestamp(close_epoch - 3600, tz=UTC)
         trade_store.append([{
             "trade_id": f"{ticker}-tape-0", "ticker": ticker, "count_fp": 100.0,
             "yes_price_dollars": price, "no_price_dollars": round(1 - price, 4),

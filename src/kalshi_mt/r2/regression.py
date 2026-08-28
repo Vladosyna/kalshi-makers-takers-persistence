@@ -27,7 +27,7 @@ full formal WCB p-value grid inversion).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import polars as pl
@@ -35,8 +35,8 @@ import statsmodels.api as sm
 
 WILD_BOOTSTRAP_CLUSTER_THRESHOLD = 50
 
-FEE_BOUNDARY_EPOCH = int(datetime(2025, 5, 1, tzinfo=timezone.utc).timestamp())
-PUBLICATION_BOUNDARY_EPOCH = int(datetime(2025, 9, 8, tzinfo=timezone.utc).timestamp())
+FEE_BOUNDARY_EPOCH = int(datetime(2025, 5, 1, tzinfo=UTC).timestamp())
+PUBLICATION_BOUNDARY_EPOCH = int(datetime(2025, 9, 8, tzinfo=UTC).timestamp())
 
 
 @dataclass
@@ -63,7 +63,7 @@ class CategoryR2Result:
 def _cluster_ids(df: pl.DataFrame) -> np.ndarray:
     event = df["event_ticker"].to_list()
     ticker = df["ticker"].to_list()
-    return np.array([e if e else t for e, t in zip(event, ticker)])
+    return np.array([e if e else t for e, t in zip(event, ticker, strict=True)])
 
 
 def _wild_cluster_bootstrap_ci(

@@ -21,7 +21,7 @@ actually sampled.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import polars as pl
@@ -38,16 +38,16 @@ REQUIRED_COLUMNS = ("created_time", *POPULATION_COLUMNS)
 # there is no reason to leave them out of a full-sample report just because
 # Check 3 (a pre-fetch diagnostic) never had R2 data to sample from.
 ERA_BOUNDARIES: list[tuple[str, int, int]] = [
-    ("2021-2022", int(datetime(2021, 1, 1, tzinfo=timezone.utc).timestamp()),
-     int(datetime(2023, 1, 1, tzinfo=timezone.utc).timestamp())),
-    ("2023", int(datetime(2023, 1, 1, tzinfo=timezone.utc).timestamp()),
-     int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())),
-    ("2024", int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp()),
-     int(datetime(2025, 1, 1, tzinfo=timezone.utc).timestamp())),
-    ("2025-jan-apr", int(datetime(2025, 1, 1, tzinfo=timezone.utc).timestamp()),
-     int(datetime(2025, 5, 1, tzinfo=timezone.utc).timestamp())),
-    ("2025-may-onward", int(datetime(2025, 5, 1, tzinfo=timezone.utc).timestamp()),
-     int(datetime(2027, 1, 1, tzinfo=timezone.utc).timestamp())),
+    ("2021-2022", int(datetime(2021, 1, 1, tzinfo=UTC).timestamp()),
+     int(datetime(2023, 1, 1, tzinfo=UTC).timestamp())),
+    ("2023", int(datetime(2023, 1, 1, tzinfo=UTC).timestamp()),
+     int(datetime(2024, 1, 1, tzinfo=UTC).timestamp())),
+    ("2024", int(datetime(2024, 1, 1, tzinfo=UTC).timestamp()),
+     int(datetime(2025, 1, 1, tzinfo=UTC).timestamp())),
+    ("2025-jan-apr", int(datetime(2025, 1, 1, tzinfo=UTC).timestamp()),
+     int(datetime(2025, 5, 1, tzinfo=UTC).timestamp())),
+    ("2025-may-onward", int(datetime(2025, 5, 1, tzinfo=UTC).timestamp()),
+     int(datetime(2027, 1, 1, tzinfo=UTC).timestamp())),
 ]
 
 
@@ -101,7 +101,7 @@ def field_population_by_era(
     same silent zero."""
     keys = [label for label, _, _ in ERA_BOUNDARIES] + [UNASSIGNED_KEY]
     totals: dict[str, dict[str, int]] = {
-        k: {"trade_count": 0, **{c: 0 for c in POPULATION_COLUMNS}} for k in keys
+        k: {"trade_count": 0, **dict.fromkeys(POPULATION_COLUMNS, 0)} for k in keys
     }
 
     for chunk in _chunks(trades):

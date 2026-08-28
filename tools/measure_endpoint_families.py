@@ -28,11 +28,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from kalshi_mt.store.db import connect_read_only  # noqa: E402
-from kalshi_mt.util import load_config  # noqa: E402
 
 
 def main() -> int:
-    config = load_config()
     conn = connect_read_only()
     try:
         mixed = conn.execute(

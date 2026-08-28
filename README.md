@@ -42,7 +42,7 @@ Three things make this more than a re-run of someone else's regression:
 
 **No execution code, no order placement, no Kalshi account required** — every
 endpoint this repo touches is Kalshi's public, unauthenticated market data
-API (verified live by Step Zero below). See [`Claude.md`](Claude.md) for the
+API (verified live by Step Zero below). See [`CLAUDE.md`](CLAUDE.md) for the
 full engineering brief (v1.1 plus dated amendments — single source of truth
 for scope, methodology, and phasing) and
 [`docs/analysis_plan.md`](docs/analysis_plan.md) for the R2 equations and
@@ -52,6 +52,50 @@ v1.0 draft, kept for history only.
 
 This is a separate, standalone repository — not part of, and not dependent
 on, `polymarket-forecast-lab`.
+
+## What came out of it
+
+Two papers, both in [`reports/final/`](reports/final/), with every figure in
+them checked against the artifacts that produced it on every CI run.
+
+**[Paper A — *Composition Shift and the Measurement of Bias in a Growing
+Prediction Market*](reports/final/paper_a_composition.md)** ([LaTeX](reports/final/paper_a_composition.tex),
+[SSRN sheet](reports/final/ssrn_submission_a.md)). The extension, targeting the
+*International Journal of Forecasting*:
+
+- **41% of the aggregate change in the favorite–longshot slope at the 2025 fee
+  boundary is composition, not behaviour.** Sports went from 0.009% of the
+  in-scope sample in calendar 2024 to 58.8% after May 2025. A naive before/after
+  comparison reports that the bias *strengthened* under a fee designed to tax
+  it — a conclusion with no mechanism behind it, reached by not asking what the
+  sample was made of.
+- **The maker fee was never an exchange-wide regime change**, so a step dummy is
+  the wrong estimator. Properly identified as a series-level
+  difference-in-differences, the pre-specified estimate is a tight null:
+  **−0.0016 (0.0064)** on 98 treated series and 119,646 event clusters.
+- An event study added *after* that result was known — and labelled exploratory
+  wherever it appears — supports parallel trends (χ²(5) = 3.24, p = 0.66) and
+  suggests a transitory reduction three to four months after treatment.
+- **The exploitable margin survives**: the maker's advantage at prices ≥50c is
+  +2.40% gross after the boundary and never crosses zero across the plausible
+  fee band.
+
+**[Paper B — the replication](reports/final/paper_b_replication.md).** BDW's
+central findings reproduce on independently collected data: all five by-year
+slopes in sign and significance, the maker margin at ≥50c at **+2.09% against
+their +2.6%**, both tail maker shares within half a percentage point. Three
+things do not reproduce and all three are reported rather than smoothed — the
+sample is 28% smaller for a reason that is named and quantified, the overall
+maker return differs while its components match, and the 63-contract mismatch
+filter cannot be reconstructed from any public field.
+
+**Paper B is held until the replicated study is published** — replication
+outlets require the original to have appeared, and as of 2026-08-28 it is still
+a working paper. That status is re-checked before any submission.
+
+Both drafts were scored against an external seven-dimension rubric and the
+findings recorded: [Paper A](reports/final/review_rubric_a.md),
+[Paper B](reports/final/review_rubric_b.md).
 
 ## Why this exists
 
@@ -130,80 +174,32 @@ survived. The headline result: the category-composition confound (sports
 launching at the R1/R2 boundary) was reclassified from a robustness footnote
 to R2's central design problem, and the entire post-fee headline was found to
 rest on an unsourced fee schedule with no sensitivity mechanism — both fixed
-in the spec before Step Zero's fetch completed. See `Claude.md` for the
+in the spec before Step Zero's fetch completed. See `CLAUDE.md` for the
 resulting design (frozen-mix reweighting, pooled interaction tests, the
 fee-sensitivity ribbon with a pre-registered "fragile" rule).
 
 ## Project status
 
-All ten phases in the engineering brief are implemented and tested
-(**441/441 tests passing**):
+**Complete.** Collection finished 2026-08-25; the analysis, both papers and
+their verification are done. What remains is submission, and one open action the
+replication commits to: contacting the original authors about the maker-return
+divergence.
 
-- [x] Phase 0 — scaffold, config, CLI skeleton, scope guard
-- [x] Phase 1 — Step Zero: the hard gate verifying Kalshi's public API has
-      what this replication needs, before any fetch or account registration
-- [x] Phase 2 — two-pass fetch pipeline (SQLite index + month-partitioned
-      Parquet trade store), both passes resumable and concurrency-parallelized
-- [x] Phase 2.5 — `docs/analysis_plan.md` committed (R2 equations, verdict
-      thresholds, decomposition formula) before any R2 estimate was computed
-- [x] Phase 3 — R1 filters, Yes-only/doubled panel construction, BDW count
-      reconciliation, frozen calendar-2024 category-mix artifact
-- [x] Phase 4 — `data/fees.yaml`: sourced fee schedule (taker formula from
-      the paper, maker fee from 2025-05-01), right-continuous step-function
-      lookup keyed on trade fill timestamp
-- [x] Phase 5 — Mincer-Zarnowitz regression, event-clustered SEs, numerically
-      verified two-way/one-way clustering equivalence, full R1 reproduction
-      report (by-year/category psi, win-rate curve, returns by band,
-      maker/taker split)
-- [x] Phase 6 — three-layer fee decomposition (gross / net-of-own-era-fee /
-      fee-held-constant counterfactual), return-convention fix
-      (`r = (payout - P - fee)/P`, avoiding a ~20x-at-5c silent bias), and the
-      fee-sensitivity ribbon with a break-even-rate statistic
-- [x] Phase 7 — R2 pooled category-interacted regression (wild cluster
-      bootstrap below 50 event clusters), within/between composition
-      decomposition, five-outcome verdict binding, horizon-robustness checks
-- [x] Phase 8 — Polymarket control-venue overlay (secular-trend check, not a
-      DiD; reversed-tail-bias / provenance / spillover caveats stated
-      explicitly, not left for a referee to find)
-- [x] Phase 9 — R3 firewall: runtime gate plus a static scan that fails the
-      build if any `r3` import appears outside `src/kalshi_mt/r3/`
-- [x] Phase 10 — maker-margin time series across the three fee layers,
-      escalation rule bound to the same delta_bar tests as the verdict
-      vocabulary, final report assembly (note vs. standalone-paper venue)
+| | |
+|---|---|
+| Trade tape | **376,760,957 fills**, 62 monthly partitions, 12.4 GB |
+| R1 window (2021 → 2025-04) | 33,222 contracts, 10,061 events, 124,732 Yes prices |
+| R2 window (2025-05 → 2026-06) | 391,427 in-scope markets, all taped |
+| Tests | **450 passing**, no network required |
+| Manuscript checks | 73 figures, 7 invariants, 7 quotations, LaTeX structure |
 
-Live data collection against the full 2021–2026 universe is under way; the
-R1 reproduction tables, the R2 lock artifact, and the final report are
-generated by `kmt build` / `kmt r1` / `kmt r2` once collection reaches the
-full R1+R2 window — every stage of that pipeline is already implemented and
-tested end-to-end against live samples, independent of how much of the
-universe has been pulled so far.
-
-**Collection state (2026-08-23).**
-
-- **R1 is done.** Its window is collected and reproduces every headline BDW
-  quantity — see [`docs/r1_reproduction_findings.md`](docs/r1_reproduction_findings.md).
-- **R2's boundary months are done, and the DiD identifies on real data**:
-  417,198 observations across 34,564 event clusters, 90 treated series, both
-  treated and control arms present in every collected month, no wild bootstrap
-  needed. The estimate itself is deliberately not read until collection closes
-  and the plan's lock artifact is written.
-- **In progress: closing quotes for the tail months 2026-05 and 2026-06** —
-  2026-05 at 96.3%, 2026-06 at 95.6%, roughly 22k markets left, about fourteen
-  hours at the observed rate. `--panel-quote-close-from/-to` exists to
-  prioritise exactly the months an estimate needs, because a delta is
-  identified by the months *bracketing* its boundary and by nothing else.
-- **Then**: Pass 2 tapes for whatever the spread filter passes in those
-  months, `kmt build`, and `kmt r2`.
-
-One measured caveat worth stating in public, because it changes what the tail
-months are worth: the spread filter's pass rate is far lower than an early
-extrapolation predicted — about 55% for 2026-05 and 20% for 2026-06 against a
-forecast of 69.5% and 51.3%. The forecast was recorded before the evidence
-existed and is compared against on every run of
-[`tools/measure_tail_yield.py`](tools/measure_tail_yield.py); it failed, the
-reason is that the quote phase walks markets in ticker order and ticker order
-turned out to be correlated with spread, and the tool says so rather than
-quietly restating the number.
+All ten phases of the engineering brief are implemented: step-zero access gate,
+two-pass fetch, R1 filters and count reconciliation, the sourced fee schedule,
+the Mincer-Zarnowitz machinery with verified clustering equivalence, the
+three-layer fee decomposition and sensitivity ribbon, the R2 pooled regression
+and composition decomposition, the Polymarket control overlay, the R3 firewall,
+and the escalation rule. The per-phase checklist is in the git history; it is
+not repeated here because every box is ticked.
 
 ## Quickstart
 
@@ -212,10 +208,15 @@ Requirements: Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone https://github.com/Vladosyna/kalshi-makers-takers-persistence && cd kalshi-makers-takers-persistence
 uv sync
-uv run pytest                # 385 tests, no network required
+uv run pytest                # 450 tests, no network required
+uv run ruff check .
 uv run kmt --help
 uv run kmt step-zero         # hard gate -- re-verify before any fresh fetch
 ```
+
+Nothing above touches the network except `step-zero`. The analysis artifacts and
+both manuscripts are committed, so the verification suite below runs on a fresh
+clone with no data collection at all.
 
 `kmt step-zero` is a hard gate (spec §3): if any required Kalshi endpoint
 turns out to need authentication, it exits with a STOP banner and
@@ -256,12 +257,39 @@ so it is not hand-written. These regenerate it and the evidence behind it:
 | `tools/r2_readiness.py` | Which R2 months are **analysable** (quoted + spread-passing + taped), and whether each boundary is ready |
 | `tools/measure_endpoint_families.py` | Which trade endpoint answers by market age, how many markets need both, and how many are permanently unquotable |
 
-`fetch_fee_schedule_history.py` needs `pypdf` for the parsing half (the
-archiving half is stdlib-only); it is deliberately not a project dependency,
-since adding one forces a `uv sync` that cannot run while a collector process
-holds `.venv/Scripts/kmt.exe` open.
+`pypdf` is a dev dependency, used by `fetch_fee_schedule_history.py` for the
+parsing half (the archiving half is stdlib-only) and by
+`audit_source_quotes.py --pdf`. It was deliberately excluded while collection
+was running, because adding a dependency forces a `uv sync` and that cannot run
+while a collector process holds `.venv/Scripts/kmt.exe` open. Collection
+finished on 2026-08-25 and the reason expired; leaving it undeclared after that
+only meant those tools worked on whichever interpreter happened to have it.
+
+### Verifying the manuscripts
+
+Four checks, run on every CI push. Each exists because something got past a
+careful human read, and each is named for what it caught.
+
+| Check | What it does | What it found |
+|---|---|---|
+| `tools/verify_paper_figures.py` | Reads each value from its artifact, formats it the way the paper should render it, and asserts that string is in the paper — 73 figures plus 7 cross-artifact invariants | A headline sample size (392,597) that **no artifact supported**, and an escalation verdict left `escalate: true` under a rule that had been superseded |
+| `tools/audit_source_quotes.py` | Every quoted fragment in both drafts must be a recorded quotation from [`docs/source_quotes.yaml`](docs/source_quotes.yaml); `--pdf` re-verifies those against the source | **Three passages presented as quotations that the replicated paper does not say** — paraphrases from this project's own notes that hardened into quotation marks |
+| `tools/lint_tex.py` | Structural checks on the LaTeX build: environments, braces, citations resolving to bibitems, refs to labels, escaping, table shapes, and that every figure in the Markdown reached the `.tex` | Its own first version, which used regexes whose backslash escaping silently matched nothing and reported a section that was sitting in the file |
+| `tests/test_r3_firewall.py` | Fails if any `r3` import appears outside `src/kalshi_mt/r3/` | — |
+
+The direction matters. A hand-check starts from the paper and finds a source for
+each claim; it never notices a claim whose source was never there. These start
+from the artifact.
+
+The LaTeX build is **not compile-verified** — no TeX toolchain was available
+where it was written. Run `pdflatex` before trusting it.
 
 ### Running the long fetches
+
+**Historical, kept as an operations record.** Collection completed on
+2026-08-25 and nothing here needs re-running to reproduce the papers. It is
+retained because the failure modes below cost days to diagnose and are not
+documented anywhere else.
 
 Both passes take hours to days against the real universe, so launch them
 **detached from whatever shell started them** — a fetch parented to an
@@ -469,10 +497,42 @@ than this program's behaviour: disable standby for the duration
 (`powercfg /change standby-timeout-ac 0`), and check that Windows Update is not
 configured to restart unattended overnight.
 
+## Repository layout
+
+```
+src/kalshi_mt/      the package: fetch, store, r1, r2, r3, fees, control, report
+tools/              one-shot measurements, provenance builders, manuscript checks
+tests/              450 tests, no network
+docs/
+  analysis_plan.md          R2 equations, thresholds, verdict vocabulary, and six
+                            dated addenda -- committed before any R2 estimate
+  r1_reproduction_findings.md   the reconciliation against BDW's integers
+  known_gaps.md             what is open, bounded, and carried rather than closed
+  source_quotes.yaml        every quotation the papers take from the replicated paper
+  sources/fees/             sixteen dated captures of Kalshi's published fee schedule
+reports/
+  r1/, r2/                  the analysis artifacts every figure is checked against
+  final/                    both papers, the LaTeX build, the SSRN sheet, the rubric scores
+data/                       fees.yaml, the frozen 2024 mix, the category map (the
+                            rest -- database, tape, caches -- is gitignored)
+```
+
+`CLAUDE.md` is the engineering brief and the single source of truth for scope
+and methodology; `kalshi-replication-spec.md` is its superseded v1.0 draft, kept
+for history only.
+
+## Citing this work
+
+[`CITATION.cff`](CITATION.cff) is machine-readable and GitHub renders a "Cite
+this repository" button from it. Cite the repository for the software and data
+artifacts, and Paper A for the findings. The replicated study is Bürgi, Deng and
+Whelan (2026), which is still a working paper — check its status before citing
+it as published.
+
 ## Analysis discipline
 
 A short field guide to the design choices this repo is built around — see
-[`Claude.md`](Claude.md) for the full spec these implement.
+[`CLAUDE.md`](CLAUDE.md) for the full spec these implement.
 
 - **Sequential gate: counts before estimates.** R1's estimates are only
   compared to BDW's after construction counts (12,403 events / 46,282

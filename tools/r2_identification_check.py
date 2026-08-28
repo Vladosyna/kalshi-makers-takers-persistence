@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import sys
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -88,12 +88,12 @@ def main() -> int:
     schedule = load_fee_schedule()
     now, ever = treated_flags(panel, schedule)
     months = [
-        datetime.fromtimestamp(int(e), tz=timezone.utc).strftime("%Y-%m")
+        datetime.fromtimestamp(int(e), tz=UTC).strftime("%Y-%m")
         for e in panel["close_time_epoch"].to_list()
     ]
     treated_by_month: Counter[str] = Counter()
     total_by_month: Counter[str] = Counter()
-    for month, flag in zip(months, now):
+    for month, flag in zip(months, now, strict=True):
         total_by_month[month] += 1
         if flag:
             treated_by_month[month] += 1

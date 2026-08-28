@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from typer.testing import CliRunner
 
-from kalshi_mt.store import db
 from kalshi_mt.store.parquet import TradeStore
 from tests.test_cli_r2 import _epoch, _seed_full_fixture, _write_frozen_mix, cli_env  # noqa: F401
 

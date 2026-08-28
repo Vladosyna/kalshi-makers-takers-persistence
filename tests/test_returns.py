@@ -8,7 +8,6 @@ from kalshi_mt.fees.returns import (
     three_layer_return,
 )
 
-
 MAKER_FEE_SERIES = "KXNBA"
 
 

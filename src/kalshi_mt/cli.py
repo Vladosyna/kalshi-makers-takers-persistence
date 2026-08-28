@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import UTC
 
 import typer
 
@@ -52,14 +53,14 @@ def _parse_date_to_epoch(
     23:59:59 rather than silently dropping that day's markets."""
     if value is None:
         return None
-    from datetime import datetime, time, timezone
+    from datetime import datetime, time
     try:
         d = datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         typer.secho(f"{flag} must be YYYY-MM-DD, got {value!r}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from None
     t = time(23, 59, 59) if end_of_day else time(0, 0, 0)
-    return int(datetime.combine(d, t, tzinfo=timezone.utc).timestamp())
+    return int(datetime.combine(d, t, tzinfo=UTC).timestamp())
 
 
 def _not_implemented(command: str, phase: str) -> None:
@@ -121,7 +122,6 @@ def step_zero() -> None:
 @app.command()
 def status() -> None:
     """Show the last Step Zero verdict and basic config sanity."""
-    from pathlib import Path
 
     from kalshi_mt.util import PROJECT_ROOT
 
@@ -223,10 +223,8 @@ def fetch_pass1(
     pass2_progress checkpoints)."""
     from kalshi_mt.api.http import TokenBucket
     from kalshi_mt.api.kalshi import KalshiClient
-    from kalshi_mt.fetch.pass1 import run_pass1
+    from kalshi_mt.fetch.pass1 import ANALYSIS_WINDOW_COLUMNS, run_pass1
     from kalshi_mt.store import db
-
-    from kalshi_mt.fetch.pass1 import ANALYSIS_WINDOW_COLUMNS
 
     config = load_config()
     min_volume_fp = None if min_volume <= 0 else min_volume
@@ -690,7 +688,11 @@ def r3_check() -> None:
     disk, and nothing in the rest of the repo may import kalshi_mt.r3.
     This command performs no R3 analysis itself (none exists yet); it only
     checks the gate."""
-    from kalshi_mt.r3.firewall import R3FirewallError, check_no_r3_imports_outside_r3, require_r2_locked
+    from kalshi_mt.r3.firewall import (
+        R3FirewallError,
+        check_no_r3_imports_outside_r3,
+        require_r2_locked,
+    )
 
     import_violations = check_no_r3_imports_outside_r3()
     try:

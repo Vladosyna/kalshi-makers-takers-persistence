@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from kalshi_mt.api.kalshi import KalshiClient, KalshiMarket, KalshiTrade
@@ -56,15 +56,15 @@ from kalshi_mt.util import (
 
 log = logging.getLogger(__name__)
 
-R1_START = int(datetime(2021, 1, 1, tzinfo=timezone.utc).timestamp())
-R1_END = int(datetime(2025, 4, 30, 23, 59, 59, tzinfo=timezone.utc).timestamp())
-R2_START = int(datetime(2025, 5, 1, tzinfo=timezone.utc).timestamp())
-R2_END = int(datetime(2026, 6, 30, 23, 59, 59, tzinfo=timezone.utc).timestamp())
+R1_START = int(datetime(2021, 1, 1, tzinfo=UTC).timestamp())
+R1_END = int(datetime(2025, 4, 30, 23, 59, 59, tzinfo=UTC).timestamp())
+R2_START = int(datetime(2025, 5, 1, tzinfo=UTC).timestamp())
+R2_END = int(datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC).timestamp())
 # Empirically confirmed during Phase 1: live /markets returns real metadata
 # for close_time ranges from roughly 2023 onward, but genuinely nothing for
 # 2021-2022 -- a different (longer) retention window than /historical/cutoff's
 # own ~60-day live/historical trades-and-candlesticks boundary.
-LIVE_METADATA_FLOOR = int(datetime(2023, 1, 1, tzinfo=timezone.utc).timestamp())
+LIVE_METADATA_FLOOR = int(datetime(2023, 1, 1, tzinfo=UTC).timestamp())
 
 # Analysis-window name -> markets column. A fixed map, so a window name can
 # only ever become one of these two literals in SQL (the column can't be a
@@ -381,7 +381,7 @@ async def discover_historical_series(
     # so nothing pointed at what to retry or investigate.
     series_failed = 0
     markets_found_total = 0
-    for row, r in zip(pending, results):
+    for row, r in zip(pending, results, strict=True):
         if isinstance(r, BaseException):
             series_failed += 1
             log.warning("historical scan failed for series %s: %r", row["series_ticker"], r)
@@ -896,7 +896,7 @@ async def run_pass1(
         per_market_results = await asyncio.gather(
             *[_process_market(row) for row in rows], return_exceptions=True
         )
-        for row, result in zip(rows, per_market_results):
+        for row, result in zip(rows, per_market_results, strict=True):
             if isinstance(result, BaseException):
                 markets_failed += 1
                 log.warning("panel/quote fetch failed for %s: %r", row["ticker"], result)

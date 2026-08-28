@@ -8,9 +8,9 @@ pytest-asyncio is not a project dependency.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC
 
 import httpx
-import pytest
 from typer.testing import CliRunner
 
 from kalshi_mt.api.kalshi import KalshiCandlestick, KalshiEvent, KalshiMarket, KalshiTrade
@@ -34,9 +34,9 @@ def _auth_error(status: int) -> httpx.HTTPStatusError:
 
 
 def _market(ticker: str, close_epoch: int, event_ticker: str) -> KalshiMarket:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    close_iso = datetime.fromtimestamp(close_epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    close_iso = datetime.fromtimestamp(close_epoch, tz=UTC).isoformat().replace("+00:00", "Z")
     return KalshiMarket.model_validate(
         {
             "ticker": ticker, "event_ticker": event_ticker, "status": "settled", "result": "yes",
@@ -46,12 +46,12 @@ def _market(ticker: str, close_epoch: int, event_ticker: str) -> KalshiMarket:
 
 
 def _trades(ticker: str, n: int, base_epoch: int, outcome_rate: float = 1.0) -> list[KalshiTrade]:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     out = []
     n_populated = round(n * outcome_rate)
     for i in range(n):
-        ts_iso = datetime.fromtimestamp(base_epoch + i * 3600, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        ts_iso = datetime.fromtimestamp(base_epoch + i * 3600, tz=UTC).isoformat().replace("+00:00", "Z")
         out.append(
             KalshiTrade.model_validate(
                 {
@@ -357,8 +357,7 @@ logging:
 
 
 def test_cli_exits_3_on_auth_required(monkeypatch, tmp_path):
-    from kalshi_mt import cli
-    from kalshi_mt import util
+    from kalshi_mt import cli, util
 
     fake = FakeKalshiClient(auth_required_on=frozenset({"get_trades"}))
 
@@ -380,8 +379,7 @@ def test_cli_exits_3_on_auth_required(monkeypatch, tmp_path):
 
 
 def test_cli_exits_0_on_clean_success(monkeypatch, tmp_path):
-    from kalshi_mt import cli
-    from kalshi_mt import util
+    from kalshi_mt import cli, util
 
     fake = FakeKalshiClient()
 

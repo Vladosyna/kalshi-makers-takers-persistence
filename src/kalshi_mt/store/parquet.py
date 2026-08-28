@@ -397,7 +397,7 @@ class TradeStore:
         con = self._aggregate_connection()
         try:
             for frame in self._per_month(con, deduped, unique):
-                for t, v in zip(frame["ticker"].to_list(), frame["dollar_volume"].to_list()):
+                for t, v in zip(frame["ticker"].to_list(), frame["dollar_volume"].to_list(), strict=True):
                     totals[t] = totals.get(t, 0.0) + (v or 0.0)
         finally:
             con.close()
@@ -553,7 +553,7 @@ class TradeStore:
         con = self._aggregate_connection()
         try:
             for frame in self._per_month(con, deduped, unique):
-                for t, n in zip(frame["ticker"].to_list(), frame["n"].to_list()):
+                for t, n in zip(frame["ticker"].to_list(), frame["n"].to_list(), strict=True):
                     totals[t] = totals.get(t, 0) + int(n or 0)
         finally:
             con.close()

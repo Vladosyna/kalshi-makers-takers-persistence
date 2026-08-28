@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC
+
 import polars as pl
 import pytest
 
@@ -190,9 +192,9 @@ def test_append_compacts_once_a_month_accumulates_enough_parts(tmp_path):
 
 
 def _epoch(iso: str) -> int:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return int(datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+    return int(datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC).timestamp())
 
 
 def test_last_trade_at_or_before_picks_the_latest_fill(tmp_path):

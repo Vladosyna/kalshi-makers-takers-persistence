@@ -67,7 +67,7 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -81,8 +81,8 @@ from kalshi_mt.r1.regression import MZResult, fit_mz_regression
 
 HF_REPO_ID = "SII-WANGZJ/Polymarket_data"
 
-CONTROL_START = int(datetime(2025, 5, 1, tzinfo=timezone.utc).timestamp())
-CONTROL_END = int(datetime(2025, 12, 31, 23, 59, 59, tzinfo=timezone.utc).timestamp())
+CONTROL_START = int(datetime(2025, 5, 1, tzinfo=UTC).timestamp())
+CONTROL_END = int(datetime(2025, 12, 31, 23, 59, 59, tzinfo=UTC).timestamp())
 
 CAVEATS = [
     "Polymarket's tail bias is REVERSED relative to Kalshi's (Qin & Yang 2026) -- "
@@ -462,9 +462,9 @@ class MonthlyPsiResult:
 
 
 def _month_bounds(year: int, month: int) -> tuple[int, int]:
-    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    start = datetime(year, month, 1, tzinfo=UTC)
     end_year, end_month = (year + 1, 1) if month == 12 else (year, month + 1)
-    end = datetime(end_year, end_month, 1, tzinfo=timezone.utc)
+    end = datetime(end_year, end_month, 1, tzinfo=UTC)
     return int(start.timestamp()), int(end.timestamp()) - 1
 
 
@@ -483,7 +483,7 @@ def monthly_psi_path(
             f"controlled coverage [{CONTROL_START}, {CONTROL_END}]."
         )
     results: list[MonthlyPsiResult] = []
-    start_dt = datetime.fromtimestamp(start, tz=timezone.utc)
+    start_dt = datetime.fromtimestamp(start, tz=UTC)
     year, month = start_dt.year, start_dt.month
     while True:
         month_start, month_end = _month_bounds(year, month)

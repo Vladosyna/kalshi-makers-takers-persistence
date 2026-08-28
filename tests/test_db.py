@@ -248,7 +248,12 @@ def test_in_scope_tickers_refuses_an_unbuilt_universe_log(tmp_path):
     126,087, and a panel build over that reached 10GB before being killed."""
     import pytest
 
-    from kalshi_mt.store.db import UniverseLogNotBuiltError, connect, in_scope_tickers, upsert_market
+    from kalshi_mt.store.db import (
+        UniverseLogNotBuiltError,
+        connect,
+        in_scope_tickers,
+        upsert_market,
+    )
 
     conn = connect(tmp_path / "t.db")
     upsert_market(conn, {"ticker": "A-1", "in_r2_window": 1})
@@ -261,7 +266,12 @@ def test_in_scope_tickers_accepts_a_window_where_nothing_was_excluded(tmp_path):
     """"No exclusions" is a legitimate state -- every market passed -- and is
     NOT the same as "build never ran". An earlier version of this guard keyed
     on the row count and would have refused a perfectly clean universe."""
-    from kalshi_mt.store.db import connect, in_scope_tickers, replace_universe_exclusions, upsert_market
+    from kalshi_mt.store.db import (
+        connect,
+        in_scope_tickers,
+        replace_universe_exclusions,
+        upsert_market,
+    )
 
     conn = connect(tmp_path / "t.db")
     upsert_market(conn, {"ticker": "CLEAN-1", "in_r2_window": 1})
@@ -271,7 +281,12 @@ def test_in_scope_tickers_accepts_a_window_where_nothing_was_excluded(tmp_path):
 
 
 def test_in_scope_tickers_excludes_logged_markets_once_built(tmp_path):
-    from kalshi_mt.store.db import connect, in_scope_tickers, replace_universe_exclusions, upsert_market
+    from kalshi_mt.store.db import (
+        connect,
+        in_scope_tickers,
+        replace_universe_exclusions,
+        upsert_market,
+    )
 
     conn = connect(tmp_path / "t.db")
     for ticker in ("KEEP-1", "DROP-1"):

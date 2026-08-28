@@ -44,7 +44,7 @@ def _cluster_ids(df: pl.DataFrame) -> np.ndarray:
     itself rather than being silently dropped from the fit."""
     event = df["event_ticker"].to_list()
     ticker = df["ticker"].to_list()
-    return np.array([e if e else t for e, t in zip(event, ticker)])
+    return np.array([e if e else t for e, t in zip(event, ticker, strict=True)])
 
 
 def fit_mz_regression(yes_only: pl.DataFrame) -> MZResult | None:

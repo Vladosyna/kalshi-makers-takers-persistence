@@ -138,7 +138,7 @@ def cdx_versions() -> list[dict]:
     header, *data = rows
     out = []
     for row in data:
-        rec = dict(zip(header, row))
+        rec = dict(zip(header, row, strict=True))
         if rec.get("statuscode") == "200":
             out.append(rec)
     return out

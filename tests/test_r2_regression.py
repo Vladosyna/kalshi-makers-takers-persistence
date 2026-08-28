@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import polars as pl
 
 from kalshi_mt.r1.panel import PANEL_SCHEMA
 from kalshi_mt.r2.regression import (
-    FEE_BOUNDARY_EPOCH,
-    PUBLICATION_BOUNDARY_EPOCH,
     fit_all_categories,
     fit_category_r2,
 )
 
 
 def _epoch(y, m=1, d=1):
-    return int(datetime(y, m, d, tzinfo=timezone.utc).timestamp())
+    return int(datetime(y, m, d, tzinfo=UTC).timestamp())
 
 
 BEFORE_FEE = _epoch(2025, 1)   # before 2025-05-01

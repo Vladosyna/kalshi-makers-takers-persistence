@@ -17,14 +17,13 @@ before any R2 estimate, is the pre-registration discipline the paper claims.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import polars as pl
 
 from kalshi_mt.store.db import ticker_scope
-
 from kalshi_mt.util import now_utc_iso
 
 BDW_TARGETS: dict[str, int] = {
@@ -36,8 +35,8 @@ BDW_TARGETS: dict[str, int] = {
     "tail_90_99c": 106_209,      # doubled basis
 }
 
-CALENDAR_2024_START = int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp())
-CALENDAR_2024_END = int(datetime(2025, 1, 1, tzinfo=timezone.utc).timestamp())
+CALENDAR_2024_START = int(datetime(2024, 1, 1, tzinfo=UTC).timestamp())
+CALENDAR_2024_END = int(datetime(2025, 1, 1, tzinfo=UTC).timestamp())
 
 
 def reconcile_counts(conn, yes_only: pl.DataFrame, doubled: pl.DataFrame) -> dict[str, Any]:

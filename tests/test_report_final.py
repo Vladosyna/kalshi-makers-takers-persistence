@@ -6,7 +6,7 @@ from kalshi_mt.r2.horizon import HorizonBucketResult, HorizonRobustnessResult
 from kalshi_mt.r2.maker_margin import MakerMarginResult
 from kalshi_mt.r2.report import build_r2_report
 from kalshi_mt.r2.verdicts import DeltaBarEstimate
-from kalshi_mt.report.escalation import EscalationResult, determine_escalation
+from kalshi_mt.report.escalation import determine_escalation
 from kalshi_mt.report.final import (
     REPLICATION_NOTE_VENUES,
     STANDALONE_PAPER_TITLE,

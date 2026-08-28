@@ -30,7 +30,6 @@ Usage:
 
 from __future__ import annotations
 
-import io
 import re
 import sys
 from pathlib import Path
@@ -63,7 +62,7 @@ def norm(s: str) -> str:
 def load_pinned() -> tuple[list[dict], list[dict]]:
     """Read the YAML without a YAML dependency: the file is a fixed shape this
     repository controls, and adding PyYAML to run one linter is not worth it."""
-    text = io.open(QUOTES, encoding="utf-8").read()
+    text = open(QUOTES, encoding="utf-8").read()
     quotes, exempt = [], []
     for block, out, key in (("quotes:", quotes, "text"), ("exempt:", exempt, "fragment")):
         if block not in text:
@@ -81,8 +80,8 @@ def load_pinned() -> tuple[list[dict], list[dict]]:
 
 
 def quoted_fragments(path: Path) -> list[str]:
-    t = norm(io.open(path, encoding="utf-8").read())
-    return [q for q in re.findall(r'"([^"]{%d,400})"' % MIN_QUOTE_CHARS, t)]
+    t = norm(open(path, encoding="utf-8").read())
+    return re.findall(rf'"([^"]{{{MIN_QUOTE_CHARS},400}})"', t)
 
 
 def main() -> int:
@@ -93,7 +92,7 @@ def main() -> int:
     print(f"{len(pinned)} recorded quotation(s), {len(exempt)} exempt fragment(s)")
 
     failures = []
-    for name, path in PAPERS.items():
+    for path in PAPERS.values():
         frags = quoted_fragments(path)
         print(f"\n  {path.name}: {len(frags)} quoted fragment(s)")
         for q in frags:

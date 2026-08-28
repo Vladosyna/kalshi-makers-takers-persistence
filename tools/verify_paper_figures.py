@@ -30,7 +30,6 @@ Usage:
 
 from __future__ import annotations
 
-import io
 import json
 import sys
 import unicodedata
@@ -47,12 +46,12 @@ EVENT = PROJECT_ROOT / "reports" / "r2" / "event_study.json"
 
 
 def _load(p: Path) -> dict:
-    with io.open(p, encoding="utf-8") as f:
+    with open(p, encoding="utf-8") as f:
         return json.load(f)
 
 
 def _text(p: Path) -> str:
-    with io.open(p, encoding="utf-8") as f:
+    with open(p, encoding="utf-8") as f:
         t = f.read()
     # The drafts use U+2212 MINUS SIGN in prose and U+002D in some tables. Fold
     # every dash-like codepoint to ASCII "-" so a check never fails on typography.
@@ -93,8 +92,10 @@ def build_checks() -> list[Check]:
 
     fills = sum(e["trade_count"] for e in r1["taker_field_population_by_era"].values())
 
-    c = []
-    a = lambda *args, **kw: c.append(Check(*args, **kw))
+    c: list[Check] = []
+
+    def a(*args, **kw):
+        c.append(Check(*args, **kw))
 
     # -- Section 2, data ------------------------------------------------------
     a("total fills", fills, "{:,} fills", source="r1_report.taker_field_population_by_era (summed)")
@@ -205,7 +206,8 @@ def build_checks() -> list[Check]:
     # by-year table and the count reconciliation are checked here rather than
     # in the shared block above.
     # ======================================================================
-    b = lambda *args, **kw: c.append(Check(*args, paper=PAPER_B, **kw))
+    def b(*args, **kw):
+        c.append(Check(*args, paper=PAPER_B, **kw))
 
     b("B: total fills", fills, "{:,} fills",
       source="r1_report.taker_field_population_by_era (summed)")

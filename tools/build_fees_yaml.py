@@ -37,7 +37,7 @@ And one that changes R1's earliest window: the taker rate was 0.14 in the
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -103,7 +103,7 @@ def build() -> str:
     last_dated = maker_versions[-1]
     lower = sorted(set(last_dated["maker_series"]) & set(today))
     upper = sorted(set(last_dated["maker_series"]) | set(today))
-    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    generated = datetime.now(UTC).strftime("%Y-%m-%d")
 
     lines: list[str] = []
     add = lines.append
@@ -117,7 +117,7 @@ def build() -> str:
     add(f"#   docs/sources/fees/*.pdf                 {len(history)} dated captures of Kalshi's own")
     add("#                                           published fee schedule, 2021-07 .. 2026-02")
     add("#   docs/sources/fees/version_history.json  machine-parsed from those PDFs")
-    add(f"#   data/series_fee_catalog.json            Kalshi API per-series fee_type,")
+    add("#   data/series_fee_catalog.json            Kalshi API per-series fee_type,")
     add(f"#                                           frozen {catalog['frozen_at']}")
     add("#")
     add("# Entry shape:")
